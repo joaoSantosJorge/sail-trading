@@ -43,7 +43,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: `execution is ${row.status}` }, { status: 409 });
   }
 
-  const chain = CHAINS[row.chainId];
+  // This route verifies EVM broadcasts only; Hyperliquid executions are
+  // confirmed server-side by the perp execute route.
+  const chain = row.chainId !== null ? CHAINS[row.chainId] : undefined;
   if (!chain) return NextResponse.json({ error: "unsupported chain" }, { status: 400 });
 
   await db

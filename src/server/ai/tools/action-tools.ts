@@ -1,9 +1,10 @@
 import { tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
-import { tradeProposalInputSchema } from "@/lib/ai/action-schemas";
+import { perpProposalInputSchema, tradeProposalInputSchema } from "@/lib/ai/action-schemas";
 import { db } from "@/server/db";
 import { executions } from "@/server/db/schema";
+import { createPerpProposal, validatePerpProposal } from "@/server/trade/perpProposals";
 import {
   createProposal,
   listProposals,
@@ -35,6 +36,22 @@ export const ACTION_SYSTEM_ADDENDUM = `## Trade proposals
 - Always include honest risks and an invalidation condition. Propose trades
   only when the user asks for one or clearly wants to act.`;
 
+/** Appended AFTER the thesis addendum — keep ACTION_SYSTEM_ADDENDUM byte-stable. */
+export const PERP_ACTION_ADDENDUM = `## Perp order proposals (Hyperliquid)
+
+- propose_perp_order proposes a perpetual-futures order on Hyperliquid for a
+  registered Hyperliquid wallet (get_perp_positions / get_portfolio show
+  them). Same contract as propose_trade: validated + clamped server-side,
+  nothing executes without the user signing on the trade page, and you are
+  never told outcomes except via get_execution.
+- coin is the Hyperliquid perp name (BTC, ETH, SOL, HYPE, …). size is in coin
+  units; sizeUsd must match size × price. Leverage is clamped to a hard
+  server cap — do not promise leverage above a few x.
+- Perps carry liquidation risk: ALWAYS state the liquidation direction and
+  funding costs in risks, and prefer low leverage unless the user explicitly
+  asks otherwise. reduceOnly closes exposure and requires an open opposite
+  position in the latest snapshot.`;
+
 export function buildActionTools(userId: string, audit: ToolAuditSink): ToolSet {
   return {
     propose_trade: tool({
@@ -55,6 +72,24 @@ export function buildActionTools(userId: string, audit: ToolAuditSink): ToolSet 
         }
       },
     }),
+    propose_perp_order: tool({
+      description:
+        "Create a Hyperliquid perpetual-futures order proposal (long/short, market or limit, leverage-capped): validated against the user's Hyperliquid wallet snapshot, live venue metadata, and hard server-side caps, then opened for review on the trade page. Nothing executes without the user's signature there. Pass reportId when it implements a saved thesis.",
+      inputSchema: perpProposalInputSchema,
+      execute: async (input) => {
+        try {
+          const validated = await validatePerpProposal(userId, input);
+          const action = await createPerpProposal(userId, validated);
+          audit({ name: "propose_perp_order", input, output: action });
+          return action;
+        } catch (err) {
+          const message =
+            err instanceof ProposalError ? err.message : "proposal validation failed";
+          audit({ name: "propose_perp_order", input, error: message });
+          return { error: message };
+        }
+      },
+    }),
     list_trade_proposals: tool({
       description:
         "List the user's trade proposals with status (proposed/approved/executed/dismissed/expired).",
@@ -69,13 +104,21 @@ export function buildActionTools(userId: string, audit: ToolAuditSink): ToolSet 
                 tokenIn?: { symbol?: string };
                 tokenOut?: { symbol?: string };
                 chainName?: string;
+                side?: string;
+                size?: string;
+                coin?: string;
+                leverage?: number;
               };
               return {
                 id: r.id,
+                kind: r.kind,
                 status: r.status,
                 reportId: r.reportId,
-                trade: `${p.amountIn ?? "?"} ${p.tokenIn?.symbol ?? "?"} → ${p.tokenOut?.symbol ?? "?"}`,
-                chain: p.chainName,
+                trade:
+                  r.kind === "perp"
+                    ? `${p.side ?? "?"} ${p.size ?? "?"} ${p.coin ?? "?"}-PERP ${p.leverage ?? "?"}x`
+                    : `${p.amountIn ?? "?"} ${p.tokenIn?.symbol ?? "?"} → ${p.tokenOut?.symbol ?? "?"}`,
+                chain: r.kind === "perp" ? "Hyperliquid" : p.chainName,
                 createdAt: r.createdAt.toISOString(),
                 expiresAt: r.expiresAt?.toISOString() ?? null,
               };
@@ -106,7 +149,9 @@ export function buildActionTools(userId: string, audit: ToolAuditSink): ToolSet 
             executions: rows.map((e) => ({
               id: e.id,
               status: e.status,
+              venue: e.venue,
               txHash: e.txHash,
+              externalId: e.externalId,
               chainId: e.chainId,
               createdAt: e.createdAt.toISOString(),
             })),

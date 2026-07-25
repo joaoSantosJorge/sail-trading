@@ -407,6 +407,7 @@ export const tradeProposals = pgTable("trade_proposals", {
     .references(() => users.id, { onDelete: "cascade" }),
   reportId: integer("report_id").references(() => researchReports.id),
   walletAddress: text("wallet_address"),
+  kind: text("kind").notNull().default("swap"), // swap | perp
   proposal: jsonb("proposal").notNull(),
   status: text("status").notNull().default("proposed"), // proposed | approved | executed | dismissed | expired
   expiresAt: timestamp("expires_at", { withTimezone: true }),
@@ -422,8 +423,12 @@ export const executions = pgTable("executions", {
     .notNull()
     .references(() => tradeProposals.id),
   userWallet: text("user_wallet"),
-  chainId: integer("chain_id").notNull(),
+  // Where the execution settles: "evm" broadcasts a tx (chainId + txHash),
+  // "hyperliquid" posts a signed order to the venue (externalId = order id).
+  venue: text("venue").notNull().default("evm"),
+  chainId: integer("chain_id"), // null for non-EVM venues
   txHash: text("tx_hash"),
+  externalId: text("external_id"), // venue-side id (Hyperliquid oid)
   quote: jsonb("quote").notNull(),
   status: text("status").notNull().default("pending"), // pending | confirmed | failed
   receipt: jsonb("receipt"),

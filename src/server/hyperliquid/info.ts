@@ -108,6 +108,66 @@ export function perpMeta(): Promise<HlPerpMeta> {
   return info({ type: "meta" });
 }
 
+export type HlAssetCtx = {
+  markPx: string;
+  midPx?: string | null;
+  funding: string;
+  openInterest: string;
+  oraclePx: string;
+} & Record<string, unknown>;
+
+/** Universe metadata zipped with live per-asset context (mark px, funding, OI). */
+export function metaAndAssetCtxs(): Promise<[HlPerpMeta, HlAssetCtx[]]> {
+  return info({ type: "metaAndAssetCtxs" });
+}
+
+export type HlExtraAgent = { address: string; name: string; validUntil: number };
+
+/** Agent wallets the address has approved (trade-only keys). */
+export function extraAgents(address: string): Promise<HlExtraAgent[]> {
+  return info({ type: "extraAgents", user: address });
+}
+
+export type HlOrderStatus =
+  | { status: "order"; order: { order: Record<string, unknown>; status: string; statusTimestamp: number } }
+  | { status: "unknownOid" };
+
+/** Status of one order by numeric oid. */
+export function orderStatus(address: string, oid: number): Promise<HlOrderStatus> {
+  return info({ type: "orderStatus", user: address, oid });
+}
+
+/**
+ * Relay a client-signed action to the exchange endpoint. The server NEVER
+ * signs — it forwards {action, signature, nonce} exactly as the browser
+ * produced them (the signature makes the payload tamper-proof) after
+ * verifying the action against the server-minted quote.
+ */
+export async function relayExchangeAction(payload: {
+  action: Record<string, unknown>;
+  signature: { r: string; s: string; v: number };
+  nonce: number;
+}): Promise<Record<string, unknown>> {
+  await bucket.take();
+  const res = await fetch(`${BASE}/exchange`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = (await res.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!res.ok || body === null) {
+    throw new HyperliquidError(
+      `Hyperliquid exchange ${res.status}: ${JSON.stringify(body)?.slice(0, 300) ?? "no body"}`,
+    );
+  }
+  return body;
+}
+
+/** True when HYPERLIQUID_API_URL points at the testnet (affects signing domains). */
+export function hyperliquidIsTestnet(): boolean {
+  return BASE.includes("testnet");
+}
+
 /**
  * Deposits/withdrawals/transfers (everything except funding) since startTime,
  * ascending. Paged by time: the per-request cap is undocumented in practice

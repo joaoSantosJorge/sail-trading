@@ -19,7 +19,11 @@ import {
 import { buildReadTools, type ToolAuditRecord } from "@/server/ai/tools/sdk-tools";
 import { buildRenderTools, RENDER_SYSTEM_ADDENDUM } from "@/server/ai/tools/render-tools";
 import { buildWriteTools, WRITE_SYSTEM_ADDENDUM } from "@/server/ai/tools/write-tools";
-import { ACTION_SYSTEM_ADDENDUM, buildActionTools } from "@/server/ai/tools/action-tools";
+import {
+  ACTION_SYSTEM_ADDENDUM,
+  buildActionTools,
+  PERP_ACTION_ADDENDUM,
+} from "@/server/ai/tools/action-tools";
 import { generateThreadTitle } from "@/server/ai/thread-title";
 import { updateThreadSummary } from "@/server/ai/thread-summary";
 import {
@@ -41,6 +45,7 @@ const STABLE_SYSTEM = [
   PHASE_B_ADDENDA,
   ACTION_SYSTEM_ADDENDUM,
   TRADE_THESIS_ADDENDUM,
+  PERP_ACTION_ADDENDUM,
   PRECEDENCE_GUARD,
 ].join("\n\n");
 
