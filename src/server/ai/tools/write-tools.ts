@@ -23,10 +23,16 @@ export const WRITE_SYSTEM_ADDENDUM = `## Saving strategies and running backtests
   feeBps 30, slippageBps 10, gasUsd 1, initialEquity 10000. The user approves
   the run. Interpret the returned metrics honestly — compare against buy-and-
   hold, and mention drawdown and trade count, not just returns.
-- Strategies the DSL cannot express (shorting, multi-asset, operand
-  arithmetic like "3% below the high") must NOT be approximated silently —
-  tell the user what can't be encoded and offer the closest expressible
-  alternative.
+- Perps mode: pass perp {leverage 1-20, maintenanceMarginFraction,
+  includeFunding} to model leverage, funding, and liquidation. REQUIRED for
+  direction "short" strategies (they error on the spot engine). Funding
+  history comes from Hyperliquid when the asset trades there; the run's
+  metrics.assumptions lists what was modeled — always relay those caveats,
+  and treat liquidation modeling as an approximation of venue mechanics.
+- Strategies the DSL cannot express (multi-asset, operand arithmetic like
+  "3% below the high") must NOT be approximated silently — tell the user
+  what can't be encoded and offer the closest expressible alternative.
+  Shorting IS expressible via direction "short" + a perps backtest.
 - save_research_report saves a markdown research note as a document the user
   can revisit under Documents -> Reports. Offer it after a substantial piece
   of analysis; write the full report into reportMd (GFM), grounded in this
@@ -46,6 +52,13 @@ const runBacktestSchema = z.object({
       slippageBps: z.number().min(0).max(1000).optional(),
       gasUsd: z.number().min(0).max(1000).optional(),
       initialEquity: z.number().min(1).max(1e12).optional(),
+    })
+    .optional(),
+  perp: z
+    .object({
+      leverage: z.number().min(1).max(20).default(1),
+      maintenanceMarginFraction: z.number().min(0.001).max(0.2).default(0.005),
+      includeFunding: z.boolean().default(true),
     })
     .optional(),
 });
@@ -145,6 +158,7 @@ export function buildWriteTools(
               tradeCount: result.metrics.tradeCount,
               timeInMarketPct: Number(result.metrics.timeInMarketPct.toFixed(1)),
             },
+            ...(result.metrics.assumptions ? { assumptions: result.metrics.assumptions } : {}),
           };
           audit({ name: "run_backtest", input, output });
           return output;

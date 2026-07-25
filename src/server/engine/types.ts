@@ -45,6 +45,12 @@ export type StrategyDSL = {
   name: string;
   description: string;
   interval: Interval;
+  /**
+   * Default "long". "short" strategies run ONLY on the perps engine
+   * (runBacktest with params.perp) — the spot path throws rather than
+   * silently approximating a short.
+   */
+  direction?: "long" | "short";
   indicators: IndicatorDef[];
   entry: Condition;
   exit: Condition;
@@ -103,6 +109,7 @@ export const StrategyDSLSchema = z.object({
   name: z.string().min(1).max(80),
   description: z.string().max(2000),
   interval: z.enum(["15m", "1h", "4h", "1d"]),
+  direction: z.enum(["long", "short"]).optional(),
   indicators: z.array(IndicatorDefSchema).max(8),
   entry: ConditionSchema,
   exit: ConditionSchema,

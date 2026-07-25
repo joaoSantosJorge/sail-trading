@@ -128,6 +128,40 @@ export function extraAgents(address: string): Promise<HlExtraAgent[]> {
   return info({ type: "extraAgents", user: address });
 }
 
+export type HlFundingEntry = {
+  coin: string;
+  fundingRate: string; // hourly rate fraction, positive = longs pay
+  premium: string;
+  time: number; // ms epoch
+};
+
+/**
+ * Hourly funding history for a perp coin in [startMs, endMs], ascending.
+ * Paged by time until a page comes back empty (per-request cap is ~500).
+ */
+export async function fundingHistory(
+  coin: string,
+  startMs: number,
+  endMs: number,
+): Promise<HlFundingEntry[]> {
+  const out: HlFundingEntry[] = [];
+  let start = startMs;
+  for (let page = 0; page < 200; page++) {
+    const batch = await info<HlFundingEntry[]>({
+      type: "fundingHistory",
+      coin,
+      startTime: start,
+      endTime: endMs,
+    });
+    if (batch.length === 0) break;
+    out.push(...batch);
+    const next = batch[batch.length - 1].time + 1;
+    if (next <= start || next > endMs) break;
+    start = next;
+  }
+  return out;
+}
+
 export type HlOrderStatus =
   | { status: "order"; order: { order: Record<string, unknown>; status: string; statusTimestamp: number } }
   | { status: "unknownOid" };

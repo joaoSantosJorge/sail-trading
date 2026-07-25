@@ -12,6 +12,8 @@ export type Metrics = {
   avgTradePnlUsd: number;
   timeInMarketPct: number;
   buyHoldReturnPct: number;
+  /** Perp-mode modeling caveats, filled by the run service (never by the engine). */
+  assumptions?: string[];
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;

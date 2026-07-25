@@ -172,6 +172,25 @@ export const assets = pgTable("assets", {
   hyperliquidSymbol: text("hyperliquid_symbol"),
 });
 
+// Hourly perp funding rates (Hyperliquid), fetch-through cached like candles.
+// `t` = funding timestamp ms; `rate` = hourly rate fraction (+ means longs pay).
+export const fundingRates = pgTable(
+  "funding_rates",
+  {
+    coin: text("coin").notNull(), // Hyperliquid perp coin name, e.g. "BTC"
+    t: bigint("t", { mode: "number" }).notNull(),
+    rate: doublePrecision("rate").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.coin, table.t] })],
+);
+
+// Contiguous [earliestT, latestT] coverage watermark per coin (mirrors candle_sync).
+export const fundingSync = pgTable("funding_sync", {
+  coin: text("coin").primaryKey(),
+  earliestT: bigint("earliest_t", { mode: "number" }).notNull(),
+  latestT: bigint("latest_t", { mode: "number" }).notNull(),
+});
+
 // One row per closed candle. `t` is the candle open time in ms since epoch (UTC).
 export const candles = pgTable(
   "candles",

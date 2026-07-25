@@ -19,6 +19,13 @@ const BodySchema = z.object({
       initialEquity: z.number().min(1).max(1e12).optional(),
     })
     .optional(),
+  perp: z
+    .object({
+      leverage: z.number().min(1).max(20).default(1),
+      maintenanceMarginFraction: z.number().min(0.001).max(0.2).default(0.005),
+      includeFunding: z.boolean().default(true),
+    })
+    .optional(),
 });
 
 export async function POST(req: NextRequest) {

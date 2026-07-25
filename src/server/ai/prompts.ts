@@ -33,6 +33,7 @@ type StrategyDSL = {
   name: string;            // short, <= 80 chars
   description: string;     // plain-English restatement of the rules, shown to the user
   interval: "15m" | "1h" | "4h" | "1d";
+  direction?: "long" | "short"; // default "long"; "short" strategies run ONLY as perp backtests
   indicators: IndicatorDef[];   // max 8
   entry: Condition;
   exit: Condition;
@@ -49,7 +50,7 @@ type StrategyDSL = {
 - Required params by indicator type: sma/ema/rsi/roc/atr/highest/lowest need "period" (2-500); macd needs "fast","slow","signal" with fast < slow; bbands needs "period" and "stdDev" (0.1-10).
 - Allowed outputs by type: macd -> "macd"|"signal"|"hist"; bbands -> "upper"|"mid"|"lower"; every other type -> "value" (or omit).
 - Every indicator referenced in entry/exit must be declared in "indicators"; ids must be unique.
-- The engine is LONG-ONLY spot: "entry" opens a long, "exit" closes it. Shorting cannot be expressed.
+- "entry" opens the position in "direction", "exit" closes it. The default spot engine is LONG-ONLY; direction "short" is legal but such a strategy backtests ONLY in perps mode (run_backtest with perp params — leverage, funding, liquidation modeled). NEVER approximate a short by inverting a long's conditions on the spot engine.
 - There is NO arithmetic between operands (no "3% below the high", no "ATR below 2% of price") — only direct comparisons and crosses.
 - "crosses_above"/"crosses_below" fire only on the crossing bar; use gt/lt for level conditions.
 - "description" must faithfully restate the rules you encoded — the user reads it to confirm you understood them.`;
@@ -134,4 +135,4 @@ ${STRATEGY_DSL_SPEC}
 
 ## Output format
 
-Respond with ONLY the JSON object — no markdown fences, no commentary. If the user's request cannot be expressed in this DSL (needs shorting, multiple assets, order-book data, operand arithmetic, fundamental data, etc.), respond instead with {"error": "<one sentence explaining what cannot be expressed>"}.`;
+Respond with ONLY the JSON object — no markdown fences, no commentary. If the user's request cannot be expressed in this DSL (needs multiple assets, order-book data, operand arithmetic, fundamental data, etc.), respond instead with {"error": "<one sentence explaining what cannot be expressed>"}. Short strategies ARE expressible: set direction "short" (they require a perps backtest to run).`;
