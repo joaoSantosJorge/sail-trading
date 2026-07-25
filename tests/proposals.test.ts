@@ -56,6 +56,20 @@ describe("clampProposal", () => {
     expect(v.chainName).toBe("Base");
   });
 
+  it("passes reportId through and defaults it to null", () => {
+    expect(clampProposal(base, [snapshot], CAPS).reportId).toBeNull();
+    expect(clampProposal({ ...base, reportId: 12 }, [snapshot], CAPS).reportId).toBe(12);
+  });
+
+  it("rejects non-positive or fractional reportId via the schema", () => {
+    expect(() => clampProposal({ ...base, reportId: 0 }, [snapshot], CAPS)).toThrow(
+      ProposalError,
+    );
+    expect(() => clampProposal({ ...base, reportId: 1.5 }, [snapshot], CAPS)).toThrow(
+      ProposalError,
+    );
+  });
+
   it("rejects an unregistered wallet", () => {
     expect(() =>
       clampProposal({ ...base, walletAddress: "0x" + "9".repeat(40) }, [snapshot], CAPS),

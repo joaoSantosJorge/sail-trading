@@ -74,6 +74,7 @@ export type SavedChartListItem = {
   interval: string;
   drawingCount: number;
   indicatorCount: number;
+  indicatorNames: string[];
   updatedAt: Date;
 };
 
@@ -98,6 +99,7 @@ export async function listSavedCharts(db: ChartsDb, userId: string): Promise<Sav
     ...rest,
     drawingCount: drawings.length,
     indicatorCount: indicators.length,
+    indicatorNames: indicators.map((i) => i.name),
   }));
 }
 

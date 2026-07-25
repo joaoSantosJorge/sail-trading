@@ -23,6 +23,8 @@ export const tradeProposalInputSchema = z.object({
   confidence: z.enum(["low", "medium", "high"]),
   /** What would void the thesis. */
   invalidation: z.string().min(5).max(500),
+  /** Optional: id returned by save_research_report — links this proposal to its thesis report. */
+  reportId: z.number().int().positive().optional(),
 });
 export type TradeProposalInput = z.infer<typeof tradeProposalInputSchema>;
 

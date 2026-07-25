@@ -51,6 +51,16 @@ export default async function ProposalPage({
           <span className="font-medium">Invalidation:</span> {p.invalidation} ·{" "}
           <span className="font-medium">Confidence:</span> {p.confidence}
         </p>
+        {row.reportId !== null && (
+          <p className="mt-3 text-sm">
+            <Link
+              href={`/documents/reports/${row.reportId}`}
+              className="font-medium text-primary hover:underline"
+            >
+              View thesis report →
+            </Link>
+          </p>
+        )}
       </div>
 
       <TradeFlow

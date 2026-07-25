@@ -45,6 +45,17 @@ export default async function TradePage() {
                   <p className="text-xs text-muted-foreground">
                     ${p.sizeUsd.toFixed(2)} · {row.createdAt.toISOString().slice(0, 16).replace("T", " ")}
                     {row.expiresAt ? ` · expires ${row.expiresAt.toISOString().slice(0, 16).replace("T", " ")}` : ""}
+                    {row.reportId !== null && (
+                      <>
+                        {" · "}
+                        <Link
+                          href={`/documents/reports/${row.reportId}`}
+                          className="hover:underline"
+                        >
+                          thesis #{row.reportId}
+                        </Link>
+                      </>
+                    )}
                   </p>
                 </div>
                 <Badge variant={row.status === "executed" ? "default" : "outline"}>{row.status}</Badge>

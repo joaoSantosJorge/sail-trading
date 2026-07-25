@@ -12,6 +12,7 @@ export async function GET() {
     data: rows.map((r) => ({
       id: r.id,
       status: r.status,
+      reportId: r.reportId,
       proposal: r.proposal,
       walletAddress: r.walletAddress,
       expiresAt: r.expiresAt?.toISOString() ?? null,

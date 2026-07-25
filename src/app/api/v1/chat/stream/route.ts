@@ -10,7 +10,12 @@ import {
 import { NextResponse } from "next/server";
 import { requireUserApi } from "@/server/auth/guards";
 import { aiConfigured, MODELS } from "@/server/ai/client";
-import { CHAT_BASE_SYSTEM, PHASE_B_ADDENDA, PRECEDENCE_GUARD } from "@/server/ai/prompts";
+import {
+  CHAT_BASE_SYSTEM,
+  PHASE_B_ADDENDA,
+  PRECEDENCE_GUARD,
+  TRADE_THESIS_ADDENDUM,
+} from "@/server/ai/prompts";
 import { buildReadTools, type ToolAuditRecord } from "@/server/ai/tools/sdk-tools";
 import { buildRenderTools, RENDER_SYSTEM_ADDENDUM } from "@/server/ai/tools/render-tools";
 import { buildWriteTools, WRITE_SYSTEM_ADDENDUM } from "@/server/ai/tools/write-tools";
@@ -35,6 +40,7 @@ const STABLE_SYSTEM = [
   RENDER_SYSTEM_ADDENDUM,
   PHASE_B_ADDENDA,
   ACTION_SYSTEM_ADDENDUM,
+  TRADE_THESIS_ADDENDUM,
   PRECEDENCE_GUARD,
 ].join("\n\n");
 
@@ -161,7 +167,9 @@ export async function POST(req: Request) {
       // on the trade page is the sole authorization.
       ...buildActionTools(ctx.userId, auditSink),
     },
-    stopWhen: stepCountIs(6),
+    // 8 steps: the trade-thesis workflow needs ~4-5 read steps plus the report
+    // save in one turn, and save-execute + propose_trade + text on resume.
+    stopWhen: stepCountIs(8),
     providerOptions: {
       anthropic: { cacheControl: { type: "ephemeral" } },
     },

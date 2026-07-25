@@ -1,6 +1,6 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/server/db";
-import { tradeProposals } from "@/server/db/schema";
+import { researchReports, tradeProposals } from "@/server/db/schema";
 import {
   tradeProposalInputSchema,
   type ProposedAction,
@@ -46,6 +46,7 @@ export type ValidatedProposal = {
   risks: string[];
   confidence: "low" | "medium" | "high";
   invalidation: string;
+  reportId: number | null;
 };
 
 export type SnapshotLike = {
@@ -169,6 +170,7 @@ export function clampProposal(
     risks: input.risks,
     confidence: input.confidence,
     invalidation: input.invalidation,
+    reportId: input.reportId ?? null,
   };
 }
 
@@ -178,10 +180,24 @@ export async function validateProposal(
   raw: unknown,
 ): Promise<ValidatedProposal> {
   const snapshots = await latestSnapshots(userId);
-  return clampProposal(raw, snapshots, {
+  const validated = clampProposal(raw, snapshots, {
     maxUsd: maxProposalUsd(),
     maxPct: maxProposalPct(),
   });
+  if (validated.reportId !== null) {
+    const [report] = await db
+      .select({ id: researchReports.id })
+      .from(researchReports)
+      .where(
+        and(eq(researchReports.id, validated.reportId), eq(researchReports.userId, userId)),
+      );
+    if (!report) {
+      throw new ProposalError(
+        `reportId ${validated.reportId} does not match one of your saved research reports — use the reportId returned by save_research_report, or omit it`,
+      );
+    }
+  }
+  return validated;
 }
 
 export async function createProposal(
@@ -193,6 +209,7 @@ export async function createProposal(
     .insert(tradeProposals)
     .values({
       userId,
+      reportId: validated.reportId,
       walletAddress: validated.walletAddress,
       proposal: validated,
       status: "proposed",

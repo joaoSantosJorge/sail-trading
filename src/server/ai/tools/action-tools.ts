@@ -39,7 +39,7 @@ export function buildActionTools(userId: string, audit: ToolAuditSink): ToolSet 
   return {
     propose_trade: tool({
       description:
-        "Create a trade proposal (swap) from analysis: validated against the user's wallet snapshot and size caps, persisted as a document, and opened for review on the trade page. Nothing executes without the user's wallet signature.",
+        "Create a trade proposal (swap) from analysis: validated against the user's wallet snapshot and size caps, persisted as a document, and opened for review on the trade page. Nothing executes without the user's wallet signature. Pass reportId (from save_research_report's result) when the trade implements a saved thesis report.",
       inputSchema: tradeProposalInputSchema,
       execute: async (input) => {
         try {
@@ -73,6 +73,7 @@ export function buildActionTools(userId: string, audit: ToolAuditSink): ToolSet 
               return {
                 id: r.id,
                 status: r.status,
+                reportId: r.reportId,
                 trade: `${p.amountIn ?? "?"} ${p.tokenIn?.symbol ?? "?"} → ${p.tokenOut?.symbol ?? "?"}`,
                 chain: p.chainName,
                 createdAt: r.createdAt.toISOString(),

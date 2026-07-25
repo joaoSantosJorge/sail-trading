@@ -5,6 +5,11 @@ import { db } from "@/server/db";
 import { assets, backtestRuns, strategies } from "@/server/db/schema";
 import type { Metrics } from "@/server/engine/metrics";
 import type { StrategyDSL } from "@/server/engine/types";
+import {
+  computeIndicatorSnapshots,
+  INDICATOR_TYPES,
+  type IndicatorRequest,
+} from "@/lib/indicators/snapshots";
 import { getCandles, type AssetRow } from "@/server/market/candleCache";
 import { INTERVAL_MS, type Candle, type Interval } from "@/server/market/types";
 
@@ -140,15 +145,33 @@ export const READ_TOOLS: ReadToolEntry[] = [
   {
     name: "get_ohlcv_summary",
     description:
-      "Price-action summary for one asset over a lookback window: open/close/high/low, % change, annualized realized volatility, and the last 10 candles. Use for grounding any price discussion. Never returns full raw series.",
+      "Price-action summary for one asset over a lookback window: open/close/high/low, % change, annualized realized volatility, and the last 10 candles. Optionally computes indicator snapshots (sma/ema/rsi/macd/bbands/atr/roc — latest value plus the 2 prior bars) over the same window; defaults: sma/ema/bbands period 20, rsi/atr 14, roc 10, macd 12/26/9, stdDev 2. Ensure lookbackBars comfortably exceeds the longest period. Use for grounding any price discussion. Never returns full raw series.",
     schema: z.object({
       assetId: z.number().int(),
       interval: z.enum(["15m", "1h", "4h", "1d"]),
       lookbackBars: z.number().int().min(30).max(500).default(180),
+      indicators: z
+        .array(
+          z.object({
+            type: z.enum(INDICATOR_TYPES),
+            period: z.number().int().min(2).max(200).optional(),
+            fast: z.number().int().min(2).max(100).optional(),
+            slow: z.number().int().min(3).max(200).optional(),
+            signal: z.number().int().min(2).max(100).optional(),
+            stdDev: z.number().min(0.1).max(10).optional(),
+          }),
+        )
+        .max(6)
+        .optional(),
     }),
     run: async (
       _ctx,
-      input: { assetId: number; interval: Interval; lookbackBars: number },
+      input: {
+        assetId: number;
+        interval: Interval;
+        lookbackBars: number;
+        indicators?: IndicatorRequest[];
+      },
     ) => {
       const asset = await assetById(input.assetId);
       if (!asset) return { error: "asset not found" };
@@ -162,7 +185,14 @@ export const READ_TOOLS: ReadToolEntry[] = [
         now,
       );
       if (candles.length === 0) return { error: "no candle data for this range" };
-      return { symbol: asset.symbol, interval: input.interval, ...candleStats(candles, input.interval) };
+      return {
+        symbol: asset.symbol,
+        interval: input.interval,
+        ...candleStats(candles, input.interval),
+        ...(input.indicators?.length
+          ? { indicatorSnapshots: computeIndicatorSnapshots(candles, input.indicators) }
+          : {}),
+      };
     },
   },
   {
@@ -314,6 +344,8 @@ import { newsConfigured } from "@/server/news/cryptopanic";
 import { getChatThreadTranscript, searchChatHistory } from "@/server/chat/history-service";
 import { getMacroSeries } from "@/server/macro/macroCache";
 import { MACRO_SLUGS } from "@/server/macro/registry";
+import { computeMacroDeltas } from "@/server/macro/snapshot";
+import { listSavedCharts } from "@/server/charts/savedCharts";
 
 READ_TOOLS.push(
   {
@@ -395,6 +427,53 @@ READ_TOOLS.push(
         latest,
         observations,
       };
+    },
+  },
+  {
+    name: "list_saved_charts",
+    description:
+      "List the user's saved chart layouts from the Analyse Assets page: name, asset symbol, interval, indicators shown (MA/EMA/BOLL/VOL/RSI/MACD), drawing count, last updated. Use when the user refers to 'my chart' or their setup, or to see what they've been watching. Follow up with get_ohlcv_summary on the same asset (chart-only intervals like 1w aren't available there).",
+    schema: z.object({}),
+    run: async ({ userId }) => {
+      const charts = await listSavedCharts(db, userId);
+      return {
+        charts: charts.map((c) => ({
+          id: c.id,
+          name: c.name,
+          symbol: c.symbol,
+          assetId: c.assetId,
+          interval: c.interval,
+          indicators: c.indicatorNames,
+          drawingCount: c.drawingCount,
+          updatedAt: c.updatedAt.toISOString(),
+        })),
+      };
+    },
+  },
+  {
+    name: "get_macro_snapshot",
+    description:
+      "Compact macro dashboard: latest value plus ~3-month and ~12-month change (in the series' own unit) for all 8 US macro series at once (cpi-yoy, core-cpi-yoy, fed-funds, treasury-10y, fed-balance-sheet, m2, unemployment, dxy). Use for the macro backdrop of a trade thesis; use get_macro_series when you need a full history. First call after a cache expiry can be slow.",
+    schema: z.object({}),
+    run: async () => {
+      const results = await Promise.all(
+        MACRO_SLUGS.map(async (slug) => {
+          const result = await getMacroSeries(db, slug);
+          const deltas = result ? computeMacroDeltas(result.observations) : null;
+          if (!result || !deltas) return { slug, error: "no data" };
+          return {
+            slug,
+            name: result.def.name,
+            unit: result.def.unit,
+            latest: deltas.latest,
+            delta3m: deltas.delta3m,
+            delta12m: deltas.delta12m,
+            stale: result.stale,
+            source: result.source,
+          };
+        }),
+      );
+      return { series: results };
     },
   },
   {

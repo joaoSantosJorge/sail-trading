@@ -15,6 +15,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     data: {
       id: row.id,
       status: row.status,
+      reportId: row.reportId,
       proposal: row.proposal,
       walletAddress: row.walletAddress,
       expiresAt: row.expiresAt?.toISOString() ?? null,

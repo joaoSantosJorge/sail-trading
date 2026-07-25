@@ -13,6 +13,7 @@ import {
 } from "@/server/db/schema";
 import type { Metrics } from "@/server/engine/metrics";
 import type { StrategyDSL } from "@/server/engine/types";
+import type { ValidatedProposal } from "@/server/trade/proposals";
 
 export const dynamic = "force-dynamic";
 
@@ -132,15 +133,30 @@ export default async function DocumentsPage() {
 
         <TabsContent value="proposals">
           <ul className="divide-y rounded-lg border">
-            {proposalRows.map((p) => (
-              <li key={p.id} className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium">Proposal #{p.id}</p>
-                  <p className="text-xs text-muted-foreground">{date(p.createdAt)}</p>
-                </div>
-                <Badge variant="outline">{p.status}</Badge>
-              </li>
-            ))}
+            {proposalRows.map((p) => {
+              const v = p.proposal as ValidatedProposal;
+              return (
+                <li key={p.id} className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <Link href={`/trade/${p.id}`} className="text-sm font-medium hover:underline">
+                      Proposal #{p.id} · {v.amountIn} {v.tokenIn.symbol} → {v.tokenOut.symbol}
+                    </Link>
+                    <p className="text-xs text-muted-foreground">
+                      {date(p.createdAt)}
+                      {p.reportId !== null && (
+                        <>
+                          {" · "}
+                          <Link href={`/documents/reports/${p.reportId}`} className="hover:underline">
+                            thesis #{p.reportId}
+                          </Link>
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <Badge variant="outline">{p.status}</Badge>
+                </li>
+              );
+            })}
             {proposalRows.length === 0 && (
               <li className="px-4 py-8 text-center text-sm text-muted-foreground">
                 Trade proposals arrive in the trade phase.

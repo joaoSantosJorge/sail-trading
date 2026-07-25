@@ -68,6 +68,7 @@ describe("savedCharts service", () => {
       interval: "1w",
       drawingCount: 1,
       indicatorCount: 2,
+      indicatorNames: ["MA", "VOL"],
     });
 
     const fetched = await getSavedChart(db, userA, created!.id);
