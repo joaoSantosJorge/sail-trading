@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AskAiButton } from "@/components/assets/ask-ai-button";
 import { AssetChartPro } from "@/components/assets/kline-chart";
+import { hasIntradaySource } from "@/server/market/candleCache";
 import { isChartInterval, type ChartInterval } from "@/server/market/types";
 import { requireUserPage } from "@/server/auth/guards";
 import { getSavedChart } from "@/server/charts/savedCharts";
@@ -48,7 +49,7 @@ export default async function AssetPage({
   const savedForAsset = savedChart && savedChart.assetId === asset.id ? savedChart : null;
 
   // Interval precedence: explicit ?interval= → saved chart → 1d. Sub-daily
-  // intervals need a Binance pair; fall back to 1d otherwise.
+  // intervals need an intraday source (Binance/Hyperliquid); fall back to 1d.
   const requested =
     sp.interval && isChartInterval(sp.interval)
       ? sp.interval
@@ -56,7 +57,7 @@ export default async function AssetPage({
         ? savedForAsset.interval
         : "1d";
   const initialInterval: ChartInterval =
-    asset.binanceSymbol === null && requested !== "1d" ? "1d" : requested;
+    !hasIntradaySource(asset) && requested !== "1d" ? "1d" : requested;
 
   const [snapshot, news, runs] = await Promise.all([
     assetSnapshot(asset),
@@ -96,7 +97,7 @@ export default async function AssetPage({
           <AssetChartPro
             assetId={asset.id}
             symbol={asset.symbol}
-            hasBinance={asset.binanceSymbol !== null}
+            hasIntraday={hasIntradaySource(asset)}
             lastPrice={snapshot?.lastClose}
             initialInterval={initialInterval}
             initialState={

@@ -166,8 +166,10 @@ export const assets = pgTable("assets", {
   chainId: integer("chain_id"),
   address: text("address"),
   decimals: integer("decimals"),
-  // USDT spot pair on Binance, e.g. "ETHUSDT". Null => CoinGecko-only asset.
+  // USDT spot pair on Binance, e.g. "ETHUSDT". Null => no Binance source.
   binanceSymbol: text("binance_symbol"),
+  // Hyperliquid perp coin name, e.g. "HYPE". Null => no Hyperliquid source.
+  hyperliquidSymbol: text("hyperliquid_symbol"),
 });
 
 // One row per closed candle. `t` is the candle open time in ms since epoch (UTC).
@@ -184,7 +186,7 @@ export const candles = pgTable(
     l: doublePrecision("l").notNull(),
     c: doublePrecision("c").notNull(),
     v: doublePrecision("v").notNull(),
-    source: text("source").notNull(), // "binance" | "coingecko"
+    source: text("source").notNull(), // "binance" | "hyperliquid" | "coingecko"
   },
   (table) => [primaryKey({ columns: [table.assetId, table.interval, table.t] })],
 );

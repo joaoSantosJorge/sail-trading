@@ -3,6 +3,7 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { candles, candleSync, type assets } from "../db/schema";
 import { fetchBinanceKlines } from "./binance";
 import { coingeckoSupports, fetchCoinGeckoDailyCandles } from "./coingecko";
+import { fetchHyperliquidCandles } from "./hyperliquid";
 import { alignOpen, nextOpen, prevOpen, type Candle, type ChartInterval } from "./types";
 
 // Loose db type so both the node-postgres app db and the PGlite test db fit.
@@ -19,6 +20,7 @@ export type CandleFetcher = (
 
 export type CandleCacheDeps = {
   fetchBinance: CandleFetcher;
+  fetchHyperliquid: CandleFetcher;
   fetchCoinGecko: CandleFetcher;
   now: () => number;
 };
@@ -26,10 +28,35 @@ export type CandleCacheDeps = {
 const defaultDeps: CandleCacheDeps = {
   fetchBinance: (asset, interval, from, to) =>
     fetchBinanceKlines(asset.binanceSymbol!, interval, from, to),
+  fetchHyperliquid: (asset, interval, from, to) =>
+    fetchHyperliquidCandles(asset.hyperliquidSymbol!, interval, from, to),
   fetchCoinGecko: (asset, _interval, from, to) =>
     fetchCoinGeckoDailyCandles(asset.coingeckoId, from, to),
   now: Date.now,
 };
+
+export type CandleSource = "binance" | "hyperliquid" | "coingecko";
+
+/**
+ * Provider priority: binance > hyperliquid > coingecko. One source per asset
+ * per interval — the candles PK has no source component. Throws when the only
+ * available source (CoinGecko) can't serve the interval.
+ */
+export function resolveCandleSource(asset: AssetRow, interval: ChartInterval): CandleSource {
+  if (asset.binanceSymbol !== null) return "binance";
+  if (asset.hyperliquidSymbol !== null) return "hyperliquid";
+  if (!coingeckoSupports(interval)) {
+    throw new Error(
+      `Asset ${asset.symbol} has no Binance or Hyperliquid listing; only 1d candles are available via CoinGecko`,
+    );
+  }
+  return "coingecko";
+}
+
+/** True when the asset has a source that can serve sub-daily intervals. */
+export function hasIntradaySource(asset: AssetRow): boolean {
+  return asset.binanceSymbol !== null || asset.hyperliquidSymbol !== null;
+}
 
 export type Span = { from: number; to: number };
 
@@ -60,12 +87,12 @@ export async function getCandles(
   const to = Math.min(alignOpen(toMs, interval), lastClosedOpen);
   if (to < from) return { candles: [], fetched: [] };
 
-  if (asset.binanceSymbol === null && !coingeckoSupports(interval)) {
-    throw new Error(
-      `Asset ${asset.symbol} has no Binance pair; only 1d candles are available via CoinGecko`,
-    );
-  }
-  const fetcher = asset.binanceSymbol !== null ? deps.fetchBinance : deps.fetchCoinGecko;
+  const source = resolveCandleSource(asset, interval);
+  const fetcher = {
+    binance: deps.fetchBinance,
+    hyperliquid: deps.fetchHyperliquid,
+    coingecko: deps.fetchCoinGecko,
+  }[source];
 
   const [sync] = await db
     .select()
@@ -92,7 +119,7 @@ export async function getCandles(
       const chunk = fetchedCandles.slice(i, i + 5000).map((c) => ({
         assetId: asset.id,
         interval,
-        source: asset.binanceSymbol !== null ? "binance" : "coingecko",
+        source,
         ...c,
       }));
       await db.insert(candles).values(chunk).onConflictDoNothing();

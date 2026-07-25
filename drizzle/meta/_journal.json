@@ -57,6 +57,13 @@
       "when": 1784986098894,
       "tag": "0007_wonderful_shotgun",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1784997002401,
+      "tag": "0008_overjoyed_warstar",
+      "breakpoints": true
     }
   ]
 }

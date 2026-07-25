@@ -1,4 +1,5 @@
 import { PGlite } from "@electric-sql/pglite";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -32,6 +33,7 @@ function syntheticCandles(
 }
 
 let db: MarketDb;
+let testDb: ReturnType<typeof drizzle<typeof schema>>;
 let asset: AssetRow;
 let calls: { from: number; to: number }[];
 let deps: CandleCacheDeps;
@@ -39,7 +41,7 @@ let birthMs: number;
 
 beforeEach(async () => {
   const pglite = new PGlite();
-  const testDb = drizzle(pglite, { schema });
+  testDb = drizzle(pglite, { schema });
   await migrate(testDb, { migrationsFolder: "./drizzle" });
   db = testDb as unknown as MarketDb;
 
@@ -55,6 +57,9 @@ beforeEach(async () => {
     fetchBinance: async (_asset, interval, from, to) => {
       calls.push({ from, to });
       return syntheticCandles(interval, from, to, birthMs);
+    },
+    fetchHyperliquid: async () => {
+      throw new Error("hyperliquid should not be called for a Binance asset");
     },
     fetchCoinGecko: async () => {
       throw new Error("coingecko should not be called for a Binance asset");
@@ -100,6 +105,58 @@ describe("candleCache", () => {
     // Requested `to` clamps to the last closed candle's open time.
     expect(calls[0].to).toBe(LAST_CLOSED);
     expect(Math.max(...result.candles.map((c) => c.t))).toBe(LAST_CLOSED);
+  });
+
+  it("routes a Hyperliquid-only asset to the Hyperliquid fetcher and tags the source", async () => {
+    const [hlAsset] = await testDb
+      .insert(schema.assets)
+      .values({
+        coingeckoId: "hyperliquid",
+        symbol: "HYPE",
+        name: "Hyperliquid",
+        binanceSymbol: null,
+        hyperliquidSymbol: "HYPE",
+      })
+      .returning();
+
+    const hlCalls: { from: number; to: number }[] = [];
+    const hlDeps: CandleCacheDeps = {
+      ...deps,
+      fetchBinance: async () => {
+        throw new Error("binance should not be called for a Hyperliquid-only asset");
+      },
+      fetchHyperliquid: async (_asset, interval, from, to) => {
+        hlCalls.push({ from, to });
+        return syntheticCandles(interval, from, to);
+      },
+    };
+
+    const from = LAST_CLOSED - 9 * HOUR;
+    const result = await getCandles(db, hlAsset, "1h", from, LAST_CLOSED, hlDeps);
+    expect(hlCalls).toHaveLength(1);
+    expect(result.candles).toHaveLength(10);
+
+    const stored = await testDb
+      .select({ source: schema.candles.source })
+      .from(schema.candles)
+      .where(eq(schema.candles.assetId, hlAsset.id));
+    expect(new Set(stored.map((r) => r.source))).toEqual(new Set(["hyperliquid"]));
+  });
+
+  it("prefers Binance when an asset has both Binance and Hyperliquid symbols", async () => {
+    const both = { ...asset, hyperliquidSymbol: "ETH" };
+    const from = LAST_CLOSED - 4 * HOUR;
+    const result = await getCandles(db, both, "1h", from, LAST_CLOSED, deps);
+    // deps.fetchHyperliquid throws, so completing proves Binance was used.
+    expect(result.candles).toHaveLength(5);
+    expect(calls).toHaveLength(1);
+  });
+
+  it("rejects sub-daily intervals for a CoinGecko-only asset", async () => {
+    const cgOnly = { ...asset, binanceSymbol: null, hyperliquidSymbol: null };
+    await expect(getCandles(db, cgOnly, "1h", LAST_CLOSED - HOUR, LAST_CLOSED, deps)).rejects.toThrow(
+      /only 1d candles/,
+    );
   });
 
   it("records requested coverage even when the asset is younger than the range", async () => {

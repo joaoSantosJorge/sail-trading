@@ -117,7 +117,7 @@ export const READ_TOOLS: ReadToolEntry[] = [
           id: a.id,
           symbol: a.symbol,
           name: a.name,
-          source: a.binanceSymbol ? "binance" : "coingecko",
+          source: a.binanceSymbol ? "binance" : a.hyperliquidSymbol ? "hyperliquid" : "coingecko",
         })),
       };
     },

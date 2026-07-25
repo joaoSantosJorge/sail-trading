@@ -61,7 +61,7 @@ export function serializeDrawings(chart: Chart): SavedDrawing[] {
 export function AssetChartPro({
   assetId,
   symbol,
-  hasBinance,
+  hasIntraday,
   lastPrice,
   initialInterval = "1d",
   initialState,
@@ -69,7 +69,7 @@ export function AssetChartPro({
 }: {
   assetId: number;
   symbol: string;
-  hasBinance: boolean;
+  hasIntraday: boolean;
   lastPrice?: number | null;
   initialInterval?: ChartInterval;
   initialState?: ChartState | null;
@@ -270,7 +270,7 @@ export function AssetChartPro({
     <div className="flex min-h-0 flex-1 flex-col gap-2">
       <div className="flex flex-wrap items-center gap-1.5">
         {CHART_INTERVALS.map((iv) => {
-          const disabled = !hasBinance && iv !== "1d";
+          const disabled = !hasIntraday && iv !== "1d";
           return (
             <button
               key={iv}

@@ -20,6 +20,9 @@ const EnvSchema = z.object({
   UNISWAP_API_KEY: z.string().optional(),
   // Macro data (FRED). Optional — DBnomics keyless fallback covers most series.
   FRED_API_KEY: z.string().optional(),
+  // Hyperliquid info API base override (testnet: https://api.hyperliquid-testnet.xyz).
+  // The API is keyless; unset means mainnet.
+  HYPERLIQUID_API_URL: z.string().optional(),
 });
 
 export const env = EnvSchema.parse({
@@ -31,4 +34,5 @@ export const env = EnvSchema.parse({
   CRYPTOPANIC_API_KEY: process.env.CRYPTOPANIC_API_KEY,
   UNISWAP_API_KEY: process.env.UNISWAP_API_KEY,
   FRED_API_KEY: process.env.FRED_API_KEY,
+  HYPERLIQUID_API_URL: process.env.HYPERLIQUID_API_URL,
 });

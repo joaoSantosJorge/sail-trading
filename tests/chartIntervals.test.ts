@@ -71,6 +71,9 @@ describe("candleCache with calendar intervals", () => {
       calls.push({ from, to });
       return alignedCandles(interval, from, to);
     },
+    fetchHyperliquid: async () => {
+      throw new Error("hyperliquid should not be called for a Binance asset");
+    },
     fetchCoinGecko: async () => {
       throw new Error("coingecko should not be called for a Binance asset");
     },
