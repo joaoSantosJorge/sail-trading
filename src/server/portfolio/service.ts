@@ -4,10 +4,7 @@ import { holdingsSnapshots, wallets } from "@/server/db/schema";
 import { type Position } from "./alchemy";
 import { adapters, getAdapter, type ChainKind } from "./adapters";
 import { fillMissingPrices } from "./prices";
-
-export function isEvmAddress(value: string): boolean {
-  return adapters.evm.validateAddress(value);
-}
+import type { PerpPosition } from "./types";
 
 export async function listWallets(userId: string) {
   return db.select().from(wallets).where(eq(wallets.userId, userId));
@@ -44,6 +41,7 @@ export async function syncWallet(
   address: string,
 ): Promise<{
   positions: Position[];
+  perps: PerpPosition[];
   totalUsd: number;
   takenAt: string;
   transfersInserted: number;
@@ -58,10 +56,16 @@ export async function syncWallet(
 
   const adapter = getAdapter(row.chain) ?? adapters.evm;
   const positions = await fillMissingPrices(await adapter.getBalances(normalized));
+  const perps = adapter.getPerpPositions ? await adapter.getPerpPositions(normalized) : [];
   const totalUsd = positions.reduce((a, p) => a + (p.valueUsd ?? 0), 0);
   const takenAt = new Date();
 
-  await db.insert(holdingsSnapshots).values({ userId, wallet: normalized, positions });
+  await db.insert(holdingsSnapshots).values({
+    userId,
+    wallet: normalized,
+    positions,
+    perps: adapter.getPerpPositions ? perps : null,
+  });
   await db
     .update(wallets)
     .set({
@@ -74,6 +78,7 @@ export async function syncWallet(
 
   return {
     positions,
+    perps,
     totalUsd,
     takenAt: takenAt.toISOString(),
     transfersInserted: transfers.inserted,
@@ -86,9 +91,11 @@ export async function latestSnapshots(userId: string) {
   const registered = await listWallets(userId);
   const out: {
     address: string;
+    chain: string;
     label: string | null;
     lastSyncedAt: string | null;
     positions: Position[];
+    perps: PerpPosition[];
     totalUsd: number;
   }[] = [];
   for (const w of registered) {
@@ -101,9 +108,11 @@ export async function latestSnapshots(userId: string) {
     const positions = (snap?.positions as Position[] | undefined) ?? [];
     out.push({
       address: w.address,
+      chain: w.chain,
       label: w.label,
       lastSyncedAt: w.lastSyncedAt?.toISOString() ?? null,
       positions,
+      perps: (snap?.perps as PerpPosition[] | null | undefined) ?? [],
       totalUsd: positions.reduce((a, p) => a + (p.valueUsd ?? 0), 0),
     });
   }

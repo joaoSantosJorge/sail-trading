@@ -1,4 +1,4 @@
-import type { Position } from "../types";
+import type { PerpPosition, Position } from "../types";
 import type { TransferDb } from "../transferCache";
 
 /**
@@ -14,6 +14,8 @@ export interface ChainAdapter {
   validateAddress(address: string): boolean;
   /** Live balances with USD prices for one address. */
   getBalances(address: string): Promise<Position[]>;
+  /** Open perpetual positions, for venues that have them (Hyperliquid). */
+  getPerpPositions?(address: string): Promise<PerpPosition[]>;
   /**
    * Incrementally sync the address's transfer history into wallet_transfers.
    * Must never throw for a single-network failure — report via `errors`.

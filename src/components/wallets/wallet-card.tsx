@@ -14,15 +14,19 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatBtc, formatUsd, usdToBtc } from "@/lib/portfolio/value";
 import { shortAddress } from "@/lib/utils";
-import type { HistoryItem, Position } from "@/server/portfolio/types";
+import type { HistoryItem, PerpPosition, Position } from "@/server/portfolio/types";
+import { Badge } from "@/components/ui/badge";
 import { HistoryTable } from "./history-table";
+import { PerpPositionsTable } from "./perp-positions-table";
 import { PositionsTable } from "./positions-table";
 
 export type WalletData = {
   address: string;
+  chain: string;
   label: string | null;
   lastSyncedAt: string | null;
   positions: Position[];
+  perps: PerpPosition[];
   totalUsd: number;
   history: HistoryItem[];
 };
@@ -74,6 +78,11 @@ export function WalletCard({
             ) : (
               shortAddress(wallet.address)
             )}
+            {wallet.chain !== "evm" && (
+              <Badge variant="outline" className="ml-2 align-middle text-xs capitalize">
+                {wallet.chain}
+              </Badge>
+            )}
           </CardTitle>
           <CardDescription>
             {wallet.lastSyncedAt
@@ -87,7 +96,7 @@ export function WalletCard({
           <Button
             size="sm"
             variant="outline"
-            disabled={busy !== null || !alchemyConfigured}
+            disabled={busy !== null || (wallet.chain === "evm" && !alchemyConfigured)}
             onClick={() => {
               setBusy("sync");
               void call(`/api/v1/wallets/${wallet.address}/sync`, { method: "POST" }, (d) => {
@@ -118,6 +127,7 @@ export function WalletCard({
         <Tabs defaultValue="assets">
           <TabsList>
             <TabsTrigger value="assets">Assets</TabsTrigger>
+            {wallet.perps.length > 0 && <TabsTrigger value="perps">Perps</TabsTrigger>}
             <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
           <TabsContent value="assets">
@@ -131,6 +141,11 @@ export function WalletCard({
               </p>
             )}
           </TabsContent>
+          {wallet.perps.length > 0 && (
+            <TabsContent value="perps">
+              <PerpPositionsTable perps={wallet.perps} />
+            </TabsContent>
+          )}
           <TabsContent value="history">
             <HistoryTable
               address={wallet.address}

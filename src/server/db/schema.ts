@@ -236,6 +236,7 @@ export const holdingsSnapshots = pgTable("holdings_snapshots", {
   wallet: text("wallet").notNull(),
   takenAt: timestamp("taken_at", { withTimezone: true }).notNull().defaultNow(),
   positions: jsonb("positions").notNull(), // [{ token, chainId, balance, usd }]
+  perps: jsonb("perps"), // PerpPosition[] — null for wallets without a perps venue
 });
 
 // On-chain transfer history cache — fetch-through like candles/news: only

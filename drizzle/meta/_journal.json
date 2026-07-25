@@ -64,6 +64,13 @@
       "when": 1784997002401,
       "tag": "0008_overjoyed_warstar",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1784997766186,
+      "tag": "0009_shallow_red_wolf",
+      "breakpoints": true
     }
   ]
 }

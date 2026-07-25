@@ -1,0 +1,139 @@
+import { env } from "../env";
+import { TokenBucket } from "../market/rateLimiter";
+
+/**
+ * Keyless client for the Hyperliquid info API (POST /info). Public reads
+ * only — account data is queried by address, no signature or key involved.
+ * Reused by the portfolio adapter and (later) the perps trade flow.
+ */
+
+const BASE = env.HYPERLIQUID_API_URL ?? "https://api.hyperliquid.xyz";
+
+// ~1200 weighted req/min per IP; 5 req/s keeps us well under.
+const bucket = new TokenBucket(5, 5);
+
+export class HyperliquidError extends Error {}
+
+async function info<T>(body: Record<string, unknown>): Promise<T> {
+  await bucket.take();
+  const res = await fetch(`${BASE}/info`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    throw new HyperliquidError(
+      `Hyperliquid info ${String(body.type)} ${res.status}: ${(await res.text()).slice(0, 200)}`,
+    );
+  }
+  return (await res.json()) as T;
+}
+
+// --- Raw response shapes (numbers arrive as strings) -----------------------
+
+export type HlAssetPosition = {
+  type: string; // "oneWay"
+  position: {
+    coin: string;
+    szi: string; // signed size; negative = short
+    entryPx: string | null;
+    positionValue: string; // abs notional in USD
+    unrealizedPnl: string;
+    liquidationPx: string | null;
+    marginUsed: string;
+    maxLeverage: number;
+    leverage: { type: "cross" | "isolated"; value: number };
+    returnOnEquity: string;
+  };
+};
+
+export type HlClearinghouseState = {
+  assetPositions: HlAssetPosition[];
+  marginSummary: {
+    accountValue: string;
+    totalNtlPos: string;
+    totalRawUsd: string;
+    totalMarginUsed: string;
+  };
+  withdrawable: string;
+  time: number;
+};
+
+export type HlSpotBalance = {
+  coin: string;
+  token: number;
+  total: string;
+  hold: string;
+  entryNtl: string;
+};
+
+export type HlSpotClearinghouseState = { balances: HlSpotBalance[] };
+
+export type HlLedgerUpdate = {
+  time: number; // ms epoch
+  hash: string;
+  delta: {
+    type: string; // deposit | withdraw | internalTransfer | spotTransfer | accountClassTransfer | ...
+    usdc?: string;
+    token?: string;
+    amount?: string;
+    destination?: string;
+    user?: string;
+  } & Record<string, unknown>;
+};
+
+export type HlPerpMeta = {
+  universe: { name: string; szDecimals: number; maxLeverage: number; onlyIsolated?: boolean }[];
+};
+
+// --- Queries ----------------------------------------------------------------
+
+/** Perp positions + margin summary for an address. */
+export function clearinghouseState(address: string): Promise<HlClearinghouseState> {
+  return info({ type: "clearinghouseState", user: address });
+}
+
+/** Spot balances for an address. */
+export function spotClearinghouseState(address: string): Promise<HlSpotClearinghouseState> {
+  return info({ type: "spotClearinghouseState", user: address });
+}
+
+/** Current mid price per coin (perp coin names; spot pairs appear as "@<index>"). */
+export function allMids(): Promise<Record<string, string>> {
+  return info({ type: "allMids" });
+}
+
+/** Perps universe metadata (coin names, size decimals, max leverage). */
+export function perpMeta(): Promise<HlPerpMeta> {
+  return info({ type: "meta" });
+}
+
+/**
+ * Deposits/withdrawals/transfers (everything except funding) since startTime,
+ * ascending. Paged by time: the per-request cap is undocumented in practice
+ * (docs say 500, mainnet returns 2000), so keep fetching until a page comes
+ * back empty. MAX_PAGES bounds pathological accounts (vaults with millions of
+ * ledger rows) — hitting it truncates the tail until the next sync.
+ */
+const MAX_LEDGER_PAGES = 40;
+
+export async function userNonFundingLedgerUpdates(
+  address: string,
+  startTimeMs: number,
+): Promise<HlLedgerUpdate[]> {
+  const out: HlLedgerUpdate[] = [];
+  let start = startTimeMs;
+  for (let page = 0; page < MAX_LEDGER_PAGES; page++) {
+    const batch = await info<HlLedgerUpdate[]>({
+      type: "userNonFundingLedgerUpdates",
+      user: address,
+      startTime: start,
+    });
+    if (batch.length === 0) break;
+    out.push(...batch);
+    const next = batch[batch.length - 1].time + 1;
+    if (next <= start) break; // safety: no forward progress
+    start = next;
+  }
+  return out;
+}

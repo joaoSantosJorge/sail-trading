@@ -374,6 +374,41 @@ READ_TOOLS.push(
     },
   },
   {
+    name: "get_perp_positions",
+    description:
+      "The user's open perpetual-futures positions (Hyperliquid) from the LATEST persisted snapshot per registered wallet: market, side, size, notional, entry, liquidation price, leverage, margin, unrealized PnL. Data is as of lastSyncedAt — flag staleness. Empty when no Hyperliquid wallet is registered or no positions are open.",
+    schema: z.object({}),
+    run: async ({ userId }) => {
+      const snapshots = await latestSnapshots(userId);
+      const wallets = snapshots
+        .filter((s) => s.perps.length > 0)
+        .map((s) => ({
+          address: s.address,
+          lastSyncedAt: s.lastSyncedAt,
+          positions: s.perps.map((p) => ({
+            venue: p.venue,
+            market: `${p.coin}-PERP`,
+            side: p.side,
+            size: p.size,
+            notionalUsd: Number(p.notionalUsd.toFixed(2)),
+            entryPx: p.entryPx,
+            liquidationPx: p.liquidationPx,
+            leverage: p.leverage,
+            marginMode: p.marginMode,
+            marginUsedUsd: Number(p.marginUsed.toFixed(2)),
+            unrealizedPnlUsd: Number(p.unrealizedPnl.toFixed(2)),
+          })),
+        }));
+      if (wallets.length === 0) {
+        return {
+          wallets: [],
+          note: "No open perp positions in the latest snapshots. Register a Hyperliquid wallet on the Portfolio page and sync it if one is missing.",
+        };
+      }
+      return { wallets };
+    },
+  },
+  {
     name: "get_market_news",
     description:
       "Recent crypto market news headlines (CryptoPanic aggregator, served from a 10-minute cache). Optionally filter by uppercase currency codes like [\"ETH\"]. Cite the source domain and published time when quoting.",

@@ -24,17 +24,22 @@ export function WalletsPanel({
   const [busy, setBusy] = useState(false);
   const [watchAddress, setWatchAddress] = useState("");
   const [watchLabel, setWatchLabel] = useState("");
+  const [watchChain, setWatchChain] = useState<"evm" | "hyperliquid">("evm");
 
   const connectedRegistered =
     !!connected && wallets.some((w) => w.address === connected.toLowerCase());
 
-  async function register(address: string, label?: string) {
+  async function register(address: string, label?: string, chain?: string) {
     setBusy(true);
     try {
       const res = await fetch("/api/v1/wallets", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ address, ...(label ? { label } : {}) }),
+        body: JSON.stringify({
+          address,
+          ...(label ? { label } : {}),
+          ...(chain ? { chain } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
@@ -73,7 +78,8 @@ export function WalletsPanel({
         className="flex flex-wrap items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          if (watchAddress.trim()) void register(watchAddress.trim(), watchLabel.trim() || undefined);
+          if (watchAddress.trim())
+            void register(watchAddress.trim(), watchLabel.trim() || undefined, watchChain);
         }}
       >
         <Input
@@ -89,6 +95,17 @@ export function WalletsPanel({
           className="w-40"
           maxLength={60}
         />
+        {/* Same 0x address either reads EVM chains via Alchemy or the
+            Hyperliquid venue via its info API — the user picks the ecosystem. */}
+        <select
+          value={watchChain}
+          onChange={(e) => setWatchChain(e.target.value as "evm" | "hyperliquid")}
+          className="h-8 rounded-md border border-input bg-transparent px-2 text-xs"
+          aria-label="Chain ecosystem"
+        >
+          <option value="evm">EVM chains</option>
+          <option value="hyperliquid">Hyperliquid</option>
+        </select>
         <Button type="submit" size="sm" variant="outline" disabled={busy || !watchAddress.trim()}>
           Watch
         </Button>

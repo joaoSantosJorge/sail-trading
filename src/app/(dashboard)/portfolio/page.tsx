@@ -29,9 +29,9 @@ export default async function PortfolioPage() {
       <div>
         <h1 className="text-2xl font-semibold">Portfolio</h1>
         <p className="text-sm text-muted-foreground">
-          Your wallets across Ethereum, Base, Arbitrum, Optimism and Polygon — total value in
-          USD and BTC, value over time, and full on-chain history plus trades made here. The AI
-          reads the latest synced snapshot — it never touches your keys.
+          Your wallets across Ethereum, Base, Arbitrum, Optimism, Polygon and Hyperliquid —
+          total value in USD and BTC, value over time, and full on-chain history plus trades
+          made here. The AI reads the latest synced snapshot — it never touches your keys.
         </p>
       </div>
       {wallets.length > 0 && (

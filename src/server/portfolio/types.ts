@@ -15,7 +15,28 @@ export type Position = {
   balance: string; // decimal string in token units
   priceUsd: number | null;
   valueUsd: number | null;
-  priceSource?: "coingecko"; // absent = priced by Alchemy (or unpriced)
+  priceSource?: "coingecko" | "hyperliquid"; // absent = priced by Alchemy (or unpriced)
+};
+
+/**
+ * An open perpetual-futures position (Hyperliquid today). Deliberately a
+ * sibling of Position, not an overload — perps carry margin/liquidation
+ * semantics that spot holdings don't. Persisted as JSONB in
+ * holdings_snapshots.perps; the perps *account value* additionally appears as
+ * one synthetic USDC Position so wallet totals stay correct unchanged.
+ */
+export type PerpPosition = {
+  venue: "hyperliquid";
+  coin: string;
+  side: "long" | "short";
+  size: number; // absolute size in coin units
+  notionalUsd: number;
+  entryPx: number | null;
+  liquidationPx: number | null;
+  leverage: number;
+  marginMode: "cross" | "isolated";
+  marginUsed: number;
+  unrealizedPnl: number;
 };
 
 export type Transfer = {

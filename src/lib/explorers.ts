@@ -20,6 +20,8 @@ export const CHAIN_NAMES: Record<number, string> = {
   137: "Polygon",
   8453: "Base",
   42161: "Arbitrum",
+  // Venue sentinel, not an EVM chain (see server/hyperliquid/constants.ts).
+  1337: "Hyperliquid",
 };
 
 export function chainName(chainId: number | null): string {
