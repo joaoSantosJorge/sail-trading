@@ -49,13 +49,26 @@ export function clearAgentKey(wallet: string, isTestnet: boolean): void {
  * action object the relay posts to the venue.
  */
 export function buildApproveAgent(agent: AgentKey, isTestnet: boolean) {
+  return buildApproveAgentFor(agent.address, agent.name, isTestnet);
+}
+
+/**
+ * Same payload for an agent the browser does NOT hold the key for — used by
+ * the live-deployments flow, where the agent key lives in a server-side
+ * enclave and only its ADDRESS is known here.
+ */
+export function buildApproveAgentFor(
+  agentAddress: `0x${string}`,
+  agentName: string,
+  isTestnet: boolean,
+) {
   const nonce = Date.now();
   const action = {
     type: "approveAgent" as const,
     signatureChainId: "0xa4b1", // Arbitrum — the wallet's signing domain, unrelated to funds
     hyperliquidChain: isTestnet ? ("Testnet" as const) : ("Mainnet" as const),
-    agentAddress: agent.address,
-    agentName: agent.name,
+    agentAddress,
+    agentName,
     nonce,
   };
   return {
@@ -79,8 +92,8 @@ export function buildApproveAgent(agent: AgentKey, isTestnet: boolean) {
       primaryType: "HyperliquidTransaction:ApproveAgent" as const,
       message: {
         hyperliquidChain: action.hyperliquidChain,
-        agentAddress: agent.address,
-        agentName: agent.name,
+        agentAddress,
+        agentName,
         nonce: BigInt(nonce),
       },
     },

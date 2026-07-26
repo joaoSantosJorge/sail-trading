@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { DeploymentControls } from "@/components/deployments/deployment-controls";
+import { GoLiveFlow } from "@/components/deployments/go-live-flow";
 import { requireUserPage } from "@/server/auth/guards";
 import { db } from "@/server/db";
 import { assets, strategies } from "@/server/db/schema";
@@ -22,6 +23,15 @@ const EVENT_LABELS: Record<string, string> = {
   paper_entry: "Paper entry",
   paper_exit: "Paper exit",
   kill_switch: "Kill switch tripped",
+  went_live: "Switched to live",
+  entry_submitted: "Entry submitted",
+  entry_filled: "Entry filled",
+  exit_submitted: "Exit submitted",
+  exit_filled: "Exit filled",
+  stop_filled: "Stop-loss filled",
+  tp_filled: "Take-profit filled",
+  reconcile_adopt: "Position closed externally",
+  reconcile_pause: "Paused: unexpected venue position",
 };
 
 export default async function DeploymentPage({ params }: { params: Promise<{ id: string }> }) {
@@ -95,6 +105,10 @@ export default async function DeploymentPage({ params }: { params: Promise<{ id:
           </p>
         </div>
       </section>
+
+      {deployment.mode === "paper" && deployment.status === "paused" && (
+        <GoLiveFlow deploymentId={deployment.id} />
+      )}
 
       <section className="flex flex-col gap-2">
         <h2 className="font-medium">Activity</h2>

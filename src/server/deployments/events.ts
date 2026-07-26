@@ -12,6 +12,7 @@ export type BotEventType =
   | "paused"
   | "resumed"
   | "stopped"
+  | "went_live"
   | "error"
   | "evaluated"
   | "skipped_bars"

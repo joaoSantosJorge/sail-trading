@@ -23,6 +23,18 @@ const EnvSchema = z.object({
   // Hyperliquid info API base override (testnet: https://api.hyperliquid-testnet.xyz).
   // The API is keyless; unset means mainnet.
   HYPERLIQUID_API_URL: z.string().optional(),
+  // Privy managed signer (live algo deployments). The app holds ONLY these
+  // API credentials — agent private keys live in Privy's enclave and are
+  // non-exportable. All optional: without them, deployments are paper-only.
+  PRIVY_APP_ID: z.string().optional(),
+  PRIVY_APP_SECRET: z.string().optional(),
+  // Base64 PKCS8 P-256 authorization key that owner-locks enclave wallets:
+  // signature requests without it are rejected by Privy.
+  PRIVY_AUTHORIZATION_KEY: z.string().optional(),
+  // Privy policy id attached to every agent wallet (deny non-trade actions).
+  PRIVY_POLICY_ID: z.string().optional(),
+  // P-256 PUBLIC key of the authorization key — owner-locks created wallets.
+  PRIVY_OWNER_PUBLIC_KEY: z.string().optional(),
 });
 
 export const env = EnvSchema.parse({
@@ -35,4 +47,9 @@ export const env = EnvSchema.parse({
   UNISWAP_API_KEY: process.env.UNISWAP_API_KEY,
   FRED_API_KEY: process.env.FRED_API_KEY,
   HYPERLIQUID_API_URL: process.env.HYPERLIQUID_API_URL,
+  PRIVY_APP_ID: process.env.PRIVY_APP_ID,
+  PRIVY_APP_SECRET: process.env.PRIVY_APP_SECRET,
+  PRIVY_AUTHORIZATION_KEY: process.env.PRIVY_AUTHORIZATION_KEY,
+  PRIVY_POLICY_ID: process.env.PRIVY_POLICY_ID,
+  PRIVY_OWNER_PUBLIC_KEY: process.env.PRIVY_OWNER_PUBLIC_KEY,
 });
