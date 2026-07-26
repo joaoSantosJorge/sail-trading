@@ -129,6 +129,7 @@ function AssistantMessage() {
                 save_research_report: ApprovalCard,
                 // Zero-side-effect action proposals: navigate + review page.
                 propose_trade: ProposedActionCard,
+                propose_perp_order: ProposedActionCard,
               },
               Fallback: ToolStatusIndicator,
             },

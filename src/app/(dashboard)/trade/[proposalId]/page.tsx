@@ -29,9 +29,12 @@ export default async function ProposalPage({
     ? `${perp.side.toUpperCase()} ${perp.size} ${perp.coin}-PERP`
     : `${swap!.amountIn} ${swap!.tokenIn.symbol} → ${swap!.tokenOut.symbol}`;
   const subtitle = perp
-    ? `Hyperliquid perps · ${perp.leverage}x · ~$${perp.notionalUsd.toFixed(2)}`
+    ? `Hyperliquid perps · ${perp.leverage}x · ~$${perp.notionalUsd.toFixed(2)}${
+        perp.stopLossPx !== null ? ` · SL ${perp.stopLossPx}` : ""
+      }${perp.takeProfitPx !== null ? ` · TP ${perp.takeProfitPx}` : ""}`
     : `${swap!.chainName} · ~$${swap!.sizeUsd.toFixed(2)}`;
   const shared = (perp ?? swap)!;
+  const isManual = shared.source === "manual";
 
   return (
     <main className="mx-auto flex w-full max-w-2xl flex-col gap-4 p-6">
@@ -50,18 +53,23 @@ export default async function ProposalPage({
       </div>
 
       <div className="rounded-lg border p-4 text-sm">
-        <h2 className="mb-1 font-medium">AI rationale</h2>
+        <h2 className="mb-1 font-medium">{isManual ? "Note" : "AI rationale"}</h2>
         <p className="leading-relaxed">{shared.rationale}</p>
-        <h3 className="mt-3 mb-1 font-medium">Risks</h3>
-        <ul className="list-disc space-y-0.5 pl-5">
-          {shared.risks.map((r) => (
-            <li key={r}>{r}</li>
-          ))}
-        </ul>
-        <p className="mt-3 text-xs text-muted-foreground">
-          <span className="font-medium">Invalidation:</span> {shared.invalidation} ·{" "}
-          <span className="font-medium">Confidence:</span> {shared.confidence}
-        </p>
+        {/* Manual proposals carry placeholder thesis fields — don't render them. */}
+        {!isManual && (
+          <>
+            <h3 className="mt-3 mb-1 font-medium">Risks</h3>
+            <ul className="list-disc space-y-0.5 pl-5">
+              {shared.risks.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ul>
+            <p className="mt-3 text-xs text-muted-foreground">
+              <span className="font-medium">Invalidation:</span> {shared.invalidation} ·{" "}
+              <span className="font-medium">Confidence:</span> {shared.confidence}
+            </p>
+          </>
+        )}
         {row.reportId !== null && (
           <p className="mt-3 text-sm">
             <Link
