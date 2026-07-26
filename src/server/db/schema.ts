@@ -1,5 +1,7 @@
+import { sql } from "drizzle-orm";
 import {
   bigint,
+  bigserial,
   doublePrecision,
   index,
   integer,
@@ -505,3 +507,118 @@ export const macroSync = pgTable("macro_sync", {
   fetchedAt: timestamp("fetched_at", { withTimezone: true }).notNull(),
   source: text("source").notNull(), // "fred" | "dbnomics"
 });
+
+// ---------------------------------------------------------------------------
+// Live algo deployments — a strategy running autonomously on a venue.
+// The app never holds key material: signing happens in a managed enclave
+// (M2); this milestone covers paper mode + the data model.
+// ---------------------------------------------------------------------------
+
+// One enclave-held agent wallet per user (Hyperliquid caps agents per master
+// account, so all of a user's bots share one agent; attribution is app-level).
+export const userSignerWallets = pgTable("user_signer_wallets", {
+  userId: uuid("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  provider: text("provider").notNull().default("privy"),
+  walletId: text("wallet_id").notNull(), // provider-side wallet id
+  agentAddress: text("agent_address").notNull(), // 0x… minted in the enclave
+  masterWallet: text("master_wallet"), // HL master the agent is approved for
+  agentValidUntil: timestamp("agent_valid_until", { withTimezone: true }), // null = not venue-approved yet
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const algoDeployments = pgTable(
+  "algo_deployments",
+  {
+    id: serial("id").primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    strategyId: integer("strategy_id")
+      .notNull()
+      .references(() => strategies.id),
+    // Backtest shown at deploy time — provenance, not a live dependency.
+    backtestRunId: integer("backtest_run_id").references(() => backtestRuns.id),
+    assetId: integer("asset_id")
+      .notNull()
+      .references(() => assets.id),
+    // Snapshot of the strategy DSL at deploy time: later edits to the
+    // strategy must never change a running bot.
+    dsl: jsonb("dsl").notNull(),
+    interval: text("interval").notNull(), // denormalized from dsl for claim queries
+    venue: text("venue").notNull().default("hyperliquid"),
+    mode: text("mode").notNull().default("paper"), // paper | live
+    status: text("status").notNull().default("paused"), // paused | active | stopped | error
+    statusReason: text("status_reason"), // e.g. "errors", "kill_switch:daily_loss", "agent_expired"
+    // Venue config — deliberately NOT part of the DSL.
+    leverage: integer("leverage").notNull().default(1),
+    marginMode: text("margin_mode").notNull().default("cross"),
+    sizingMode: text("sizing_mode").notNull(), // pct_equity | fixed_usd
+    sizingValue: doublePrecision("sizing_value").notNull(),
+    // Kill switches (null = off).
+    maxDrawdownPct: doublePrecision("max_drawdown_pct"),
+    dailyLossLimitUsd: doublePrecision("daily_loss_limit_usd"),
+    // Runtime state. Expected position only — the venue is the source of
+    // truth and is reconciled every tick (paper mode simulates fills).
+    walletAddress: text("wallet_address"), // user's HL master wallet (live mode)
+    lastBarT: bigint("last_bar_t", { mode: "number" }), // watermark: last evaluated closed bar
+    lastRunAt: timestamp("last_run_at", { withTimezone: true }),
+    consecutiveErrors: integer("consecutive_errors").notNull().default(0),
+    claimedAt: timestamp("claimed_at", { withTimezone: true }), // worker lease
+    claimedBy: text("claimed_by"),
+    positionSize: doublePrecision("position_size"), // signed base units; null/0 = flat
+    entryPx: doublePrecision("entry_px"),
+    entryBarT: bigint("entry_bar_t", { mode: "number" }),
+    entryOid: text("entry_oid"),
+    tpOid: text("tp_oid"),
+    slOid: text("sl_oid"),
+    cooldownLeft: integer("cooldown_left").notNull().default(0),
+    baselineEquityUsd: doublePrecision("baseline_equity_usd"),
+    realizedPnlUsd: doublePrecision("realized_pnl_usd").notNull().default(0),
+    peakPnlUsd: doublePrecision("peak_pnl_usd").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("algo_deployments_user_created_idx").on(table.userId, table.createdAt),
+    index("algo_deployments_due_idx").on(table.status, table.interval, table.lastBarT),
+    // Hyperliquid holds ONE one-way position per coin per account, so two
+    // live bots on the same coin for one user would fight over it. Paper
+    // deployments may overlap freely.
+    uniqueIndex("algo_deployments_live_coin_uq")
+      .on(table.userId, table.assetId)
+      .where(sql`status = 'active' and mode = 'live'`),
+  ],
+);
+
+// Append-only activity feed: every evaluation, order, fill, error, and
+// lifecycle change. The user-facing history of what a bot did and why.
+export const botEvents = pgTable(
+  "bot_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    deploymentId: integer("deployment_id")
+      .notNull()
+      .references(() => algoDeployments.id, { onDelete: "cascade" }),
+    userId: uuid("user_id").notNull(), // denormalized for feed queries
+    barT: bigint("bar_t", { mode: "number" }), // null for lifecycle events
+    // evaluated | paper_entry | paper_exit | entry_submitted | entry_filled |
+    // exit_submitted | exit_filled | stop_filled | tp_filled | error |
+    // activated | paused | resumed | stopped | kill_switch |
+    // reconcile_adopt | reconcile_pause | skipped_bars
+    type: text("type").notNull(),
+    signal: jsonb("signal"), // { entry, exit } from computeSignals
+    detail: jsonb("detail"), // { oid, cloid, px, sz, pnl, error, gapBars, … }
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("bot_events_deployment_created_idx").on(table.deploymentId, table.createdAt),
+    index("bot_events_user_created_idx").on(table.userId, table.createdAt),
+    // Idempotency backstop: a bar is evaluated at most once per deployment.
+    uniqueIndex("bot_events_evaluated_bar_uq")
+      .on(table.deploymentId, table.barT)
+      .where(sql`type = 'evaluated'`),
+  ],
+);

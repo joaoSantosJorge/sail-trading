@@ -2,6 +2,7 @@
 
 import {
   ArrowLeftRight,
+  Bot,
   ChevronRight,
   FileText,
   LineChart,
@@ -94,6 +95,7 @@ const navGroups: NavGroup[] = [
 ];
 
 const tradeItem = { name: "Trade", href: "/trade", icon: ArrowLeftRight };
+const botsItem = { name: "Bots", href: "/deployments", icon: Bot };
 
 const MAX_VISIBLE_THREADS = 5;
 
@@ -102,7 +104,7 @@ const MAX_VISIBLE_THREADS = 5;
  * routes like /assets/[id] resolve to their section.
  */
 function resolveActiveHref(pathname: string): string | null {
-  const candidates = [...topNav, ...navGroups.flatMap((g) => g.items), tradeItem]
+  const candidates = [...topNav, ...navGroups.flatMap((g) => g.items), tradeItem, botsItem]
     .map((i) => i.href)
     .filter((h) => pathname === h || pathname.startsWith(`${h}/`));
   return candidates.sort((a, b) => b.length - a.length)[0] ?? null;
@@ -280,6 +282,16 @@ export function AppSidebar({
                 >
                   <tradeItem.icon className="h-4 w-4" />
                   <span>{tradeItem.name}</span>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton
+                  isActive={botsItem.href === activeHref}
+                  tooltip={botsItem.name}
+                  render={<Link href={botsItem.href} />}
+                >
+                  <botsItem.icon className="h-4 w-4" />
+                  <span>{botsItem.name}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>

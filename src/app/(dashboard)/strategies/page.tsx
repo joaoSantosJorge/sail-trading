@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { desc } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
+import { requireUserPage } from "@/server/auth/guards";
 import { db } from "@/server/db";
 import { strategies } from "@/server/db/schema";
 import type { StrategyDSL } from "@/server/engine/types";
@@ -7,7 +8,12 @@ import type { StrategyDSL } from "@/server/engine/types";
 export const dynamic = "force-dynamic";
 
 export default async function StrategiesPage() {
-  const rows = await db.select().from(strategies).orderBy(desc(strategies.createdAt));
+  const { userId } = await requireUserPage();
+  const rows = await db
+    .select()
+    .from(strategies)
+    .where(eq(strategies.userId, userId))
+    .orderBy(desc(strategies.createdAt));
 
   return (
     <main className="flex w-full flex-col gap-4 p-6">
