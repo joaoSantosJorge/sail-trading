@@ -4,6 +4,7 @@ import { formatPx } from "@/lib/hyperliquid/format";
 import { requireUserApi } from "@/server/auth/guards";
 import { HYPERLIQUID_CHAIN_ID } from "@/server/hyperliquid/constants";
 import { hyperliquidIsTestnet, metaAndAssetCtxs, HyperliquidError } from "@/server/hyperliquid/info";
+import { buildPerpOrderAction } from "@/server/trade/perpOrder";
 import { getProposal, setProposalStatus } from "@/server/trade/proposals";
 import { MAX_PX_BAND_PCT, type ValidatedPerpProposal } from "@/server/trade/perpProposals";
 import { QUOTE_TTL_MS, saveQuote } from "@/server/trade/quotes";
@@ -73,21 +74,9 @@ export async function POST(req: NextRequest) {
     }
 
     // EXACT wire actions (key order matters for the L1 action hash — the
-    // client signs these objects verbatim).
-    const orderAction = {
-      type: "order",
-      orders: [
-        {
-          a: assetIndex,
-          b: proposal.side === "long",
-          p: px,
-          s: proposal.size,
-          r: proposal.reduceOnly,
-          t: { limit: { tif: proposal.tif } },
-        },
-      ],
-      grouping: "na",
-    };
+    // client signs these objects verbatim). Entry plus optional reduce-only
+    // TP/SL trigger exits, built by the unit-tested pure builder.
+    const { orderAction, slPx, tpPx } = buildPerpOrderAction(proposal, assetIndex, px);
     // Honor the clamped leverage before opening new exposure (skipped for
     // reduceOnly — closing needs no leverage change).
     const updateLeverageAction = proposal.reduceOnly
@@ -104,7 +93,7 @@ export async function POST(req: NextRequest) {
       userId: ctx.userId,
       chainId: HYPERLIQUID_CHAIN_ID,
       walletAddress: proposal.walletAddress,
-      quote: { orderAction, updateLeverageAction, coin: proposal.coin, markPx, px },
+      quote: { orderAction, updateLeverageAction, coin: proposal.coin, markPx, px, slPx, tpPx },
       permitData: null,
     });
 
@@ -125,6 +114,8 @@ export async function POST(req: NextRequest) {
         leverage: proposal.leverage,
         tif: proposal.tif,
         reduceOnly: proposal.reduceOnly,
+        slPx,
+        tpPx,
         orderAction,
         updateLeverageAction,
         isTestnet: hyperliquidIsTestnet(),
