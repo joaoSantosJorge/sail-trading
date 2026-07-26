@@ -10,11 +10,13 @@ import {
   createDeployment,
   deleteDeployment,
   getDeployment,
+  goLiveDeployment,
   listDeployments,
   PAPER_STARTING_EQUITY_USD,
   transitionDeployment,
   type DeploymentsDb,
 } from "@/server/deployments/service";
+import { existingBotNotional } from "@/server/deployments/risk";
 import { INTERVAL_MS } from "@/server/market/types";
 import type { StrategyDSL } from "@/server/engine/types";
 
@@ -56,7 +58,13 @@ beforeEach(async () => {
 
   const [eth] = await testDb
     .insert(schema.assets)
-    .values({ coingeckoId: "ethereum", symbol: "ETH", name: "Ethereum", binanceSymbol: "ETHUSDT" })
+    .values({
+      coingeckoId: "ethereum",
+      symbol: "ETH",
+      name: "Ethereum",
+      binanceSymbol: "ETHUSDT",
+      hyperliquidSymbol: "ETH",
+    })
     .returning({ id: schema.assets.id });
   assetId = eth.id;
   const [longTail] = await testDb
@@ -201,6 +209,96 @@ describe("bot_events idempotency", () => {
     const rest = await listEvents(userId, d.id, { before: first[2].id, limit: 10 }, db);
     expect(rest.length).toBeGreaterThanOrEqual(3); // remaining evaluated + created
     expect(Math.max(...rest.map((e) => e.id))).toBeLessThan(first[2].id);
+  });
+});
+
+describe("goLiveDeployment", () => {
+  const WALLET = "0x2222222222222222222222222222222222222222";
+
+  it("flips a paused paper deployment to live and resets the paper run-state", async () => {
+    const d = await createDeployment(userId, validInput(), db);
+    // Simulate an existing paper track record.
+    await testDb
+      .update(schema.algoDeployments)
+      .set({ positionSize: 1.5, entryPx: 100, realizedPnlUsd: 42, peakPnlUsd: 50 })
+      .where(eq(schema.algoDeployments.id, d.id));
+
+    const live = await goLiveDeployment(userId, d.id, WALLET, 5000, db);
+    expect(live.mode).toBe("live");
+    expect(live.walletAddress).toBe(WALLET);
+    expect(live.baselineEquityUsd).toBe(5000);
+    expect(live.positionSize).toBeNull();
+    expect(live.realizedPnlUsd).toBe(0);
+    expect(live.peakPnlUsd).toBe(0);
+
+    const events = await listEvents(userId, d.id, {}, db);
+    expect(events[0].type).toBe("went_live");
+  });
+
+  it("refuses while active and when already live", async () => {
+    const d = await createDeployment(userId, validInput(), db);
+    await transitionDeployment(userId, d.id, "active", db);
+    await expect(goLiveDeployment(userId, d.id, WALLET, 5000, db)).rejects.toThrow(/pause/);
+    await transitionDeployment(userId, d.id, "paused", db);
+
+    await goLiveDeployment(userId, d.id, WALLET, 5000, db);
+    await expect(goLiveDeployment(userId, d.id, WALLET, 5000, db)).rejects.toThrow(/already live/);
+  });
+
+  it("requires a Hyperliquid market and positive account value", async () => {
+    // A 1d strategy may deploy on a CoinGecko-only asset — but that asset
+    // cannot go live (no venue market).
+    const [daily] = await testDb
+      .insert(schema.strategies)
+      .values({ userId, name: "1d", dsl: { ...DSL, interval: "1d" }, source: "manual" })
+      .returning({ id: schema.strategies.id });
+    const noVenue = await createDeployment(
+      userId,
+      { ...validInput(), strategyId: daily.id, assetId: cgOnlyAssetId },
+      db,
+    );
+    await expect(goLiveDeployment(userId, noVenue.id, WALLET, 5000, db)).rejects.toThrow(
+      /no Hyperliquid market/,
+    );
+
+    const onVenue = await createDeployment(userId, validInput(), db);
+    await expect(goLiveDeployment(userId, onVenue.id, WALLET, 0, db)).rejects.toThrow(
+      /account value/,
+    );
+  });
+});
+
+describe("existingBotNotional", () => {
+  it("sums |position × entry| across OTHER active live bots only", async () => {
+    // Distinct asset per live bot — the partial unique index (rightly)
+    // forbids two active live bots on one coin for the same user.
+    let coinN = 0;
+    const mk = async (over: Record<string, unknown>) => {
+      const [asset] = await testDb
+        .insert(schema.assets)
+        .values({
+          coingeckoId: `coin-${++coinN}`,
+          symbol: `C${coinN}`,
+          name: `Coin ${coinN}`,
+          binanceSymbol: `C${coinN}USDT`,
+          hyperliquidSymbol: `C${coinN}`,
+        })
+        .returning({ id: schema.assets.id });
+      const d = await createDeployment(userId, { ...validInput(), assetId: asset.id }, db);
+      if (Object.keys(over).length > 0) {
+        await testDb
+          .update(schema.algoDeployments)
+          .set(over)
+          .where(eq(schema.algoDeployments.id, d.id));
+      }
+      return d.id;
+    };
+    const target = await mk({});
+    await mk({ mode: "live", status: "active", positionSize: 2, entryPx: 100 }); // 200
+    await mk({ mode: "live", status: "active", positionSize: -1, entryPx: 300 }); // 300
+    await mk({ mode: "live", status: "paused", positionSize: 5, entryPx: 100 }); // ignored
+    await mk({ mode: "paper", status: "active", positionSize: 5, entryPx: 100 }); // ignored
+    expect(await existingBotNotional(userId, target, db)).toBe(500);
   });
 });
 

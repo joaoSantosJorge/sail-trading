@@ -183,6 +183,63 @@ export async function transitionDeployment(
   return updated;
 }
 
+/**
+ * Flip a PAUSED paper deployment to live. Requirements: asset trades on
+ * Hyperliquid, the user's enclave agent is venue-approved for the wallet,
+ * and the wallet has account value. Paper run-state (position, PnL) is
+ * RESET — a live track record never blends with a simulated one.
+ */
+export async function goLiveDeployment(
+  userId: string,
+  id: number,
+  walletAddress: string,
+  accountValueUsd: number,
+  db: DeploymentsDb = defaultDb,
+): Promise<DeploymentRow> {
+  const row = await getDeployment(userId, id, db);
+  if (!row) throw new DeploymentError("deployment not found");
+  if (row.status !== "paused") throw new DeploymentError("pause the deployment before going live");
+  if (row.mode === "live") throw new DeploymentError("deployment is already live");
+  const [asset] = await db.select().from(assets).where(eq(assets.id, row.assetId));
+  if (!asset?.hyperliquidSymbol) {
+    throw new DeploymentError(`${asset?.symbol ?? "asset"} has no Hyperliquid market`);
+  }
+  if (!(accountValueUsd > 0)) {
+    throw new DeploymentError("wallet has no perps account value on Hyperliquid");
+  }
+
+  const [updated] = await db
+    .update(algoDeployments)
+    .set({
+      mode: "live",
+      walletAddress: walletAddress.toLowerCase(),
+      baselineEquityUsd: accountValueUsd,
+      positionSize: null,
+      entryPx: null,
+      entryBarT: null,
+      entryOid: null,
+      tpOid: null,
+      slOid: null,
+      cooldownLeft: 0,
+      realizedPnlUsd: 0,
+      peakPnlUsd: 0,
+      statusReason: null,
+      updatedAt: new Date(),
+    })
+    .where(and(eq(algoDeployments.id, id), eq(algoDeployments.userId, userId)))
+    .returning();
+  await recordEvent(
+    {
+      deploymentId: id,
+      userId,
+      type: "went_live",
+      detail: { walletAddress: walletAddress.toLowerCase(), baselineEquityUsd: accountValueUsd },
+    },
+    db,
+  );
+  return updated;
+}
+
 /** Delete a deployment and its events. Refused while the bot is running. */
 export async function deleteDeployment(
   userId: string,
