@@ -1,8 +1,9 @@
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { BacktestLauncher } from "@/components/BacktestLauncher";
 import { renderCondition, renderIndicators, renderRisk } from "@/lib/dslRender";
+import { requireUserPage } from "@/server/auth/guards";
 import { db } from "@/server/db";
 import { assets, backtestRuns, strategies } from "@/server/db/schema";
 import type { Metrics } from "@/server/engine/metrics";
@@ -11,8 +12,12 @@ import type { StrategyDSL } from "@/server/engine/types";
 export const dynamic = "force-dynamic";
 
 export default async function StrategyPage({ params }: { params: Promise<{ id: string }> }) {
+  const { userId } = await requireUserPage();
   const { id } = await params;
-  const [strategy] = await db.select().from(strategies).where(eq(strategies.id, Number(id)));
+  const [strategy] = await db
+    .select()
+    .from(strategies)
+    .where(and(eq(strategies.id, Number(id)), eq(strategies.userId, userId)));
   if (!strategy) notFound();
   const dsl = strategy.dsl as StrategyDSL;
 
@@ -23,7 +28,7 @@ export default async function StrategyPage({ params }: { params: Promise<{ id: s
   const runs = await db
     .select()
     .from(backtestRuns)
-    .where(eq(backtestRuns.strategyId, strategy.id))
+    .where(and(eq(backtestRuns.strategyId, strategy.id), eq(backtestRuns.userId, userId)))
     .orderBy(desc(backtestRuns.createdAt));
 
   return (
@@ -32,7 +37,15 @@ export default async function StrategyPage({ params }: { params: Promise<{ id: s
         <Link href="/strategies" className="text-sm text-muted-foreground hover:underline">
           ← strategies
         </Link>
-        <h1 className="text-2xl font-semibold">{strategy.name}</h1>
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-semibold">{strategy.name}</h1>
+          <Link
+            href={`/deployments/new?strategyId=${strategy.id}`}
+            className="rounded-md bg-primary px-3 py-1.5 text-sm text-primary-foreground"
+          >
+            Deploy as bot
+          </Link>
+        </div>
         <p className="text-sm text-muted-foreground">
           {dsl.interval} · {strategy.source}
         </p>
