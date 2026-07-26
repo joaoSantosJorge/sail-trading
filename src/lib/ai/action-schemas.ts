@@ -25,6 +25,8 @@ export const tradeProposalInputSchema = z.object({
   invalidation: z.string().min(5).max(500),
   /** Optional: id returned by save_research_report — links this proposal to its thesis report. */
   reportId: z.number().int().positive().optional(),
+  /** Who authored the proposal — labeling only, never a safety input. */
+  source: z.enum(["ai", "manual"]).default("ai"),
 });
 export type TradeProposalInput = z.infer<typeof tradeProposalInputSchema>;
 
@@ -45,6 +47,14 @@ export const perpProposalInputSchema = z.object({
   tif: z.enum(["Gtc", "Ioc"]).default("Gtc"),
   /** Only reduce an existing opposite-side position — no new exposure. */
   reduceOnly: z.boolean().default(false),
+  /**
+   * Stop-loss trigger price: a reduce-only trigger order placed atomically
+   * with the entry. Long: below the entry price; short: above. Not allowed
+   * together with reduceOnly.
+   */
+  stopLossPx: z.number().positive().optional(),
+  /** Take-profit trigger price. Long: above the entry price; short: below. */
+  takeProfitPx: z.number().positive().optional(),
   /** Approximate USD notional (used for the safety cap cross-check). */
   sizeUsd: z.number().positive(),
   /** Market orders execute as IOC limit at mark ± this slippage. */
@@ -56,8 +66,50 @@ export const perpProposalInputSchema = z.object({
   invalidation: z.string().min(5).max(500),
   /** Optional: id returned by save_research_report — links this proposal to its thesis report. */
   reportId: z.number().int().positive().optional(),
+  /** Who authored the proposal — labeling only, never a safety input. */
+  source: z.enum(["ai", "manual"]).default("ai"),
 });
 export type PerpProposalInput = z.infer<typeof perpProposalInputSchema>;
+
+/**
+ * Manual-form variants: the user fills the trade parameters; the AI-flavored
+ * thesis fields (rationale/risks/confidence/invalidation) are replaced by an
+ * optional free-text note. Derived from the full schemas so they cannot drift.
+ */
+const aiOnlyFields = {
+  rationale: true,
+  risks: true,
+  confidence: true,
+  invalidation: true,
+  reportId: true,
+  source: true,
+} as const;
+
+export const manualSwapInputSchema = tradeProposalInputSchema
+  .omit(aiOnlyFields)
+  .extend({ note: z.string().max(2000).optional() });
+export type ManualSwapInput = z.infer<typeof manualSwapInputSchema>;
+
+export const manualPerpInputSchema = perpProposalInputSchema
+  .omit(aiOnlyFields)
+  .extend({ note: z.string().max(2000).optional() });
+export type ManualPerpInput = z.infer<typeof manualPerpInputSchema>;
+
+/**
+ * Map a manual form input to the full clamp input. The defaults satisfy the
+ * strict schema minimums; the UI hides them for manual proposals.
+ */
+export function manualToProposalInput<T extends { note?: string }>(input: T) {
+  const { note, ...rest } = input;
+  return {
+    ...rest,
+    source: "manual" as const,
+    rationale: note?.trim() || "Manually created by the user on the Trade page.",
+    risks: ["Manual trade — no AI risk assessment."],
+    confidence: "medium" as const,
+    invalidation: "n/a — manual trade",
+  };
+}
 
 export type ProposedAction = {
   proposalId: number;

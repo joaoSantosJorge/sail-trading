@@ -29,12 +29,21 @@ type PerpQuote = {
   leverage: number;
   tif: string;
   reduceOnly: boolean;
+  slPx: string | null;
+  tpPx: string | null;
   orderAction: Record<string, unknown>;
   updateLeverageAction: Record<string, unknown> | null;
   isTestnet: boolean;
 };
 
-type ExecResult = { status: string; oid: number | null; fill: { totalSz: string; avgPx: string } | null; resting: boolean };
+type ExecResult = {
+  status: string;
+  oid: number | null;
+  fill: { totalSz: string; avgPx: string } | null;
+  resting: boolean;
+  triggerOids?: number[];
+  warning?: string | null;
+};
 
 export function PerpTradeFlow({
   proposalId,
@@ -190,6 +199,17 @@ export function PerpTradeFlow({
           {result.oid !== null && (
             <p className="font-mono text-xs text-muted-foreground">order id {result.oid}</p>
           )}
+          {result.triggerOids !== undefined && result.triggerOids.length > 0 && (
+            <p className="text-muted-foreground">
+              TP/SL trigger orders resting (oid{result.triggerOids.length > 1 ? "s" : ""}{" "}
+              {result.triggerOids.join(", ")}) — they fire when the market reaches your levels.
+            </p>
+          )}
+          {result.warning && (
+            <p className="rounded-md border border-warning/40 bg-warning/10 p-2 text-warning-foreground">
+              {result.warning}
+            </p>
+          )}
         </CardContent>
       </Card>
     );
@@ -279,6 +299,18 @@ export function PerpTradeFlow({
                 {quote.leverage}x cross{quote.reduceOnly ? " · reduce-only" : ""}
               </span>
             </div>
+            {quote.slPx !== null && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Stop loss (trigger)</span>
+                <span className="font-mono tabular-figures">{quote.slPx}</span>
+              </div>
+            )}
+            {quote.tpPx !== null && (
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Take profit (trigger)</span>
+                <span className="font-mono tabular-figures">{quote.tpPx}</span>
+              </div>
+            )}
           </div>
         )}
 

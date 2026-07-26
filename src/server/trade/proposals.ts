@@ -47,6 +47,7 @@ export type ValidatedProposal = {
   confidence: "low" | "medium" | "high";
   invalidation: string;
   reportId: number | null;
+  source: "ai" | "manual";
 };
 
 export type SnapshotLike = {
@@ -171,6 +172,7 @@ export function clampProposal(
     confidence: input.confidence,
     invalidation: input.invalidation,
     reportId: input.reportId ?? null,
+    source: input.source,
   };
 }
 

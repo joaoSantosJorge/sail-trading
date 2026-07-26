@@ -118,11 +118,13 @@ export async function POST(req: NextRequest) {
       .returning({ id: executions.id });
 
     const orderRes = await relayExchangeAction(body.order);
-    const status = (
-      orderRes as {
-        response?: { data?: { statuses?: unknown[] } };
-      }
-    ).response?.data?.statuses?.[0];
+    // One status per order in the action's orders array: [entry, ...triggers].
+    // The entry (index 0) decides the proposal outcome; TP/SL trigger exits
+    // rest until the entry fills.
+    const statuses =
+      (orderRes as { response?: { data?: { statuses?: unknown[] } } }).response?.data?.statuses ??
+      [];
+    const status = statuses[0];
 
     if (orderRes.status !== "ok" || status === undefined || (typeof status === "object" && status !== null && "error" in status)) {
       const reason =
@@ -134,6 +136,19 @@ export async function POST(req: NextRequest) {
         .set({ status: "failed", receipt: { reason, response: orderRes } })
         .where(eq(executions.id, execution.id));
       return NextResponse.json({ error: `order rejected: ${reason}` }, { status: 502 });
+    }
+
+    // Trigger exits (statuses[1..]): collect resting oids; a rejected trigger
+    // does NOT fail the execution — the entry already went through — but it
+    // is recorded and surfaced so the user knows the exit is NOT in place.
+    const triggerOids: number[] = [];
+    const triggerErrors: string[] = [];
+    for (const t of statuses.slice(1)) {
+      if (typeof t === "object" && t !== null && "resting" in t) {
+        triggerOids.push((t as { resting: { oid: number } }).resting.oid);
+      } else if (typeof t === "object" && t !== null && "error" in t) {
+        triggerErrors.push(String((t as { error: unknown }).error));
+      }
     }
 
     let oid: number | null = null;
@@ -167,7 +182,7 @@ export async function POST(req: NextRequest) {
       .set({
         status: outcome,
         externalId: oid !== null ? String(oid) : null,
-        receipt: { status, fill },
+        receipt: { status, fill, triggerOids, triggerErrors },
       })
       .where(eq(executions.id, execution.id));
     // The user's signed order was accepted by the venue — the proposal is
@@ -181,6 +196,11 @@ export async function POST(req: NextRequest) {
         oid,
         fill,
         resting: outcome === "pending",
+        triggerOids,
+        warning:
+          triggerErrors.length > 0
+            ? `entry placed, but ${triggerErrors.length === 1 ? "a TP/SL order was" : "TP/SL orders were"} rejected: ${triggerErrors.join("; ")} — your exit is NOT in place`
+            : null,
       },
     });
   } catch (err) {
