@@ -22,6 +22,8 @@ import { ProposalError } from "./proposals";
 const PROPOSAL_TTL_MS = 24 * 60 * 60 * 1000;
 /** Limit prices may deviate at most this much from the mark (fat-finger guard). */
 export const MAX_PX_BAND_PCT = 20;
+/** Stop/take-profit triggers may deviate at most this much from the entry price. */
+export const MAX_TRIGGER_BAND_PCT = 80;
 
 function maxProposalUsd(): number {
   return Number(process.env.MAX_PROPOSAL_USD) || 1000;
@@ -68,6 +70,10 @@ export type ValidatedPerpProposal = {
   limitPx: string | null;
   tif: "Gtc" | "Ioc";
   reduceOnly: boolean;
+  /** Rounded wire price of the stop-loss trigger; null when not set. */
+  stopLossPx: string | null;
+  /** Rounded wire price of the take-profit trigger; null when not set. */
+  takeProfitPx: string | null;
   /** Notional at the validation-time mark price. */
   notionalUsd: number;
   markPxAtProposal: number;
@@ -77,6 +83,7 @@ export type ValidatedPerpProposal = {
   confidence: "low" | "medium" | "high";
   invalidation: string;
   reportId: number | null;
+  source: "ai" | "manual";
 };
 
 /**
@@ -144,6 +151,46 @@ export function clampPerpProposal(
   const px = limitPx !== null ? Number(limitPx) : market.markPx;
   const notionalUsd = size * px;
 
+  // Stop-loss / take-profit triggers: reduce-only exits placed atomically with
+  // the entry. Validated against the reference (entry) price on the ROUNDED
+  // wire values, strict inequalities — a trigger that rounds onto the entry
+  // price is rejected.
+  if (input.reduceOnly && (input.stopLossPx !== undefined || input.takeProfitPx !== undefined)) {
+    throw new ProposalError(
+      "stopLossPx/takeProfitPx cannot be combined with reduceOnly — they are exit orders themselves",
+    );
+  }
+  const clampTrigger = (label: "stopLossPx" | "takeProfitPx", value: number): string => {
+    const deviationPct = (Math.abs(value - px) / px) * 100;
+    if (deviationPct > MAX_TRIGGER_BAND_PCT) {
+      throw new ProposalError(
+        `${label} ${value} is ${deviationPct.toFixed(1)}% away from the entry price ${px} (max ${MAX_TRIGGER_BAND_PCT}%)`,
+      );
+    }
+    return formatPx(value, market.szDecimals);
+  };
+  const entryLabel = input.orderType === "limit" ? "limit" : "mark";
+  let stopLossPx: string | null = null;
+  if (input.stopLossPx !== undefined) {
+    stopLossPx = clampTrigger("stopLossPx", input.stopLossPx);
+    const sl = Number(stopLossPx);
+    if (input.side === "long" ? sl >= px : sl <= px) {
+      throw new ProposalError(
+        `stopLossPx ${stopLossPx} must be ${input.side === "long" ? "below" : "above"} the ${entryLabel} price ${px} for a ${input.side}`,
+      );
+    }
+  }
+  let takeProfitPx: string | null = null;
+  if (input.takeProfitPx !== undefined) {
+    takeProfitPx = clampTrigger("takeProfitPx", input.takeProfitPx);
+    const tp = Number(takeProfitPx);
+    if (input.side === "long" ? tp <= px : tp >= px) {
+      throw new ProposalError(
+        `takeProfitPx ${takeProfitPx} must be ${input.side === "long" ? "above" : "below"} the ${entryLabel} price ${px} for a ${input.side}`,
+      );
+    }
+  }
+
   if (input.reduceOnly) {
     // Closing exposure is risk-reducing: exempt from the notional caps, but
     // it must actually reduce an open opposite-side position.
@@ -198,6 +245,8 @@ export function clampPerpProposal(
     limitPx,
     tif: input.orderType === "market" ? "Ioc" : input.tif,
     reduceOnly: input.reduceOnly,
+    stopLossPx,
+    takeProfitPx,
     notionalUsd,
     markPxAtProposal: market.markPx,
     maxSlippageBps: Math.min(input.maxSlippageBps, 100),
@@ -206,6 +255,7 @@ export function clampPerpProposal(
     confidence: input.confidence,
     invalidation: input.invalidation,
     reportId: input.reportId ?? null,
+    source: input.source,
   };
 }
 
@@ -300,6 +350,12 @@ export async function createPerpProposal(
           validated.orderType === "market" ? "market (IOC)" : `limit @ ${validated.limitPx} ${validated.tif}`,
       },
       { label: "Notional", value: `$${validated.notionalUsd.toFixed(2)}` },
+      ...(validated.stopLossPx !== null
+        ? [{ label: "Stop loss", value: validated.stopLossPx }]
+        : []),
+      ...(validated.takeProfitPx !== null
+        ? [{ label: "Take profit", value: validated.takeProfitPx }]
+        : []),
       { label: "Confidence", value: validated.confidence },
     ],
     expiresAt: expiresAt.toISOString(),

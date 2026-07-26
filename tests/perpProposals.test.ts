@@ -161,6 +161,102 @@ describe("clampPerpProposal", () => {
     ).toThrow(/exceeds the open short position/);
   });
 
+  it("accepts SL/TP on a long and rounds them to wire prices", () => {
+    const v = clampPerpProposal(
+      { ...base, stopLossPx: 45.12345, takeProfitPx: 60.6789 },
+      [account],
+      markets,
+      caps,
+    );
+    expect(v.stopLossPx).toBe("45.123"); // 5 significant figures
+    expect(v.takeProfitPx).toBe("60.679");
+  });
+
+  it("accepts SL/TP on a short (mirrored sides)", () => {
+    const v = clampPerpProposal(
+      { ...base, side: "short", stopLossPx: 55, takeProfitPx: 40 },
+      [account],
+      markets,
+      caps,
+    );
+    expect(v.stopLossPx).toBe("55");
+    expect(v.takeProfitPx).toBe("40");
+  });
+
+  it("validates SL/TP against the limit price for limit orders", () => {
+    expect(() =>
+      clampPerpProposal(
+        { ...base, orderType: "limit", limitPx: 48, stopLossPx: 49 },
+        [account],
+        markets,
+        caps,
+      ),
+    ).toThrow(/must be below the limit price 48/);
+    const v = clampPerpProposal(
+      { ...base, orderType: "limit", limitPx: 48, stopLossPx: 44, takeProfitPx: 56 },
+      [account],
+      markets,
+      caps,
+    );
+    expect(v.stopLossPx).toBe("44");
+    expect(v.takeProfitPx).toBe("56");
+  });
+
+  it("rejects wrong-side triggers", () => {
+    expect(() =>
+      clampPerpProposal({ ...base, stopLossPx: 55 }, [account], markets, caps),
+    ).toThrow(/stopLossPx 55 must be below the mark price 50 for a long/);
+    expect(() =>
+      clampPerpProposal({ ...base, takeProfitPx: 45 }, [account], markets, caps),
+    ).toThrow(/takeProfitPx 45 must be above the mark price 50 for a long/);
+    expect(() =>
+      clampPerpProposal({ ...base, side: "short", stopLossPx: 45 }, [account], markets, caps),
+    ).toThrow(/stopLossPx 45 must be above the mark price 50 for a short/);
+    expect(() =>
+      clampPerpProposal({ ...base, side: "short", takeProfitPx: 55 }, [account], markets, caps),
+    ).toThrow(/takeProfitPx 55 must be below the mark price 50 for a short/);
+  });
+
+  it("rejects a trigger that ROUNDS onto the entry price", () => {
+    // 49.99999 → 5 sig figs → "50" — collides with the mark after rounding.
+    expect(() =>
+      clampPerpProposal({ ...base, stopLossPx: 49.99999 }, [account], markets, caps),
+    ).toThrow(/must be below the mark price 50/);
+  });
+
+  it("rejects triggers outside the ±80% band", () => {
+    expect(() =>
+      clampPerpProposal({ ...base, stopLossPx: 5 }, [account], markets, caps),
+    ).toThrow(/90.0% away from the entry price 50 \(max 80%\)/);
+    expect(() =>
+      clampPerpProposal({ ...base, side: "short", stopLossPx: 95 }, [account], markets, caps),
+    ).toThrow(/90.0% away from the entry price 50/);
+  });
+
+  it("rejects SL/TP combined with reduceOnly", () => {
+    expect(() =>
+      clampPerpProposal(
+        { ...base, coin: "ETH", side: "long", size: "0.1", sizeUsd: 400, reduceOnly: true, stopLossPx: 3500 },
+        [account],
+        markets,
+        caps,
+      ),
+    ).toThrow(/cannot be combined with reduceOnly/);
+  });
+
+  it("defaults source to ai and passes manual through", () => {
+    expect(clampPerpProposal(base, [account], markets, caps).source).toBe("ai");
+    expect(
+      clampPerpProposal({ ...base, source: "manual" }, [account], markets, caps).source,
+    ).toBe("manual");
+  });
+
+  it("leaves SL/TP null when not provided", () => {
+    const v = clampPerpProposal(base, [account], markets, caps);
+    expect(v.stopLossPx).toBeNull();
+    expect(v.takeProfitPx).toBeNull();
+  });
+
   it("skips the margin check for reduceOnly (closing frees margin)", () => {
     const tight = { ...account, accountValue: 1_000, totalMarginUsed: 995 };
     const v = clampPerpProposal(
