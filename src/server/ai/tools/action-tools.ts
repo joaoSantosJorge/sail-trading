@@ -50,7 +50,11 @@ export const PERP_ACTION_ADDENDUM = `## Perp order proposals (Hyperliquid)
 - Perps carry liquidation risk: ALWAYS state the liquidation direction and
   funding costs in risks, and prefer low leverage unless the user explicitly
   asks otherwise. reduceOnly closes exposure and requires an open opposite
-  position in the latest snapshot.`;
+  position in the latest snapshot.
+- stopLossPx/takeProfitPx attach reduce-only trigger exits placed atomically
+  with the entry (long: SL below / TP above the entry price; short reversed;
+  not allowed with reduceOnly). Prefer proposing a stop loss whenever
+  leverage is above 1x.`;
 
 export function buildActionTools(userId: string, audit: ToolAuditSink): ToolSet {
   return {
@@ -74,7 +78,7 @@ export function buildActionTools(userId: string, audit: ToolAuditSink): ToolSet 
     }),
     propose_perp_order: tool({
       description:
-        "Create a Hyperliquid perpetual-futures order proposal (long/short, market or limit, leverage-capped): validated against the user's Hyperliquid wallet snapshot, live venue metadata, and hard server-side caps, then opened for review on the trade page. Nothing executes without the user's signature there. Pass reportId when it implements a saved thesis.",
+        "Create a Hyperliquid perpetual-futures order proposal (long/short, market or limit, leverage-capped): validated against the user's Hyperliquid wallet snapshot, live venue metadata, and hard server-side caps, then opened for review on the trade page. Optional stopLossPx/takeProfitPx attach reduce-only trigger exit orders placed atomically with the entry. Nothing executes without the user's signature there. Pass reportId when it implements a saved thesis.",
       inputSchema: perpProposalInputSchema,
       execute: async (input) => {
         try {
