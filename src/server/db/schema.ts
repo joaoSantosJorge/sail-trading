@@ -200,7 +200,7 @@ export const candles = pgTable(
     assetId: integer("asset_id")
       .notNull()
       .references(() => assets.id),
-    interval: text("interval").notNull(), // "15m" | "1h" | "4h" | "1d"
+    interval: text("interval").notNull(), // ChartInterval: 5m | 15m | 1h | 4h | 1d | 1w | 1M
     t: bigint("t", { mode: "number" }).notNull(),
     o: doublePrecision("o").notNull(),
     h: doublePrecision("h").notNull(),

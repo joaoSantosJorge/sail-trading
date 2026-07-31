@@ -48,8 +48,9 @@ export default async function AssetPage({
       : null;
   const savedForAsset = savedChart && savedChart.assetId === asset.id ? savedChart : null;
 
-  // Interval precedence: explicit ?interval= → saved chart → 1d. Sub-daily
-  // intervals need an intraday source (Binance/Hyperliquid); fall back to 1d.
+  // Interval precedence: explicit ?interval= → saved chart → 1d. Every interval
+  // other than 1d (sub-daily as well as 1w/1M) needs a Binance/Hyperliquid
+  // source — CoinGecko-only assets fall back to 1d.
   const requested =
     sp.interval && isChartInterval(sp.interval)
       ? sp.interval

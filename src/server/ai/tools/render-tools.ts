@@ -20,8 +20,12 @@ export const RENDER_SYSTEM_ADDENDUM = `## Visual blocks
 You can render inline visual blocks with these tools. Use them when a chart or
 metric row genuinely helps — not on every answer.
 - render_price_chart: a candlestick chart spec (asset, interval, lookback,
-  optional SMA/EMA overlays). Never paste candle arrays into text — fetch data
-  with read tools for your prose, and let the chart show the series.
+  optional SMA/EMA overlays). Intervals: 5m, 15m, 1h, 4h, 1d, 1w, 1M — always
+  use the timeframe the user asked for ("weekly" -> 1w, "monthly" -> 1M), never
+  substitute a different one. Warm-up bars for the overlays are added
+  automatically, so lookbackBars is the window you want SHOWN. Never paste
+  candle arrays into text — fetch data with read tools for your prose, and let
+  the chart show the series.
 - render_metrics: a compact KPI row. Values are preformatted strings you copy
   from tool results.
 - render_backtest: the equity/price visualization of a completed backtest run
@@ -32,7 +36,7 @@ export function buildRenderTools(userId: string, audit: ToolAuditSink): ToolSet 
   return {
     render_price_chart: tool({
       description:
-        "Render an inline candlestick chart for an asset. Args are a spec (assetId, interval, lookbackBars, optional sma/ema overlays); the client fetches the candles itself.",
+        "Render an inline candlestick chart for an asset. Args are a spec (assetId, interval — one of 5m/15m/1h/4h/1d/1w/1M, lookbackBars = bars to SHOW, optional sma/ema overlays); the client fetches the candles itself, including the extra warm-up bars each overlay needs.",
       inputSchema: priceChartSpecSchema,
       execute: async (input) => {
         audit({ name: "render_price_chart", input, output: { rendered: true } });
