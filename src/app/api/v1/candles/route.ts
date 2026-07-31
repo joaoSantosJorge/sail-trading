@@ -3,7 +3,7 @@ import { type NextRequest, NextResponse } from "next/server";
 import { requireUserApi } from "@/server/auth/guards";
 import { db } from "@/server/db";
 import { assets } from "@/server/db/schema";
-import { getCandles } from "@/server/market/candleCache";
+import { getCandles, hasIntradaySource } from "@/server/market/candleCache";
 import { CHART_INTERVAL_MS, isChartInterval, type ChartInterval } from "@/server/market/types";
 
 export const runtime = "nodejs";
@@ -32,6 +32,16 @@ export async function GET(req: NextRequest) {
   const [asset] = await db.select().from(assets).where(eq(assets.id, assetId));
   if (!asset) {
     return NextResponse.json({ error: "unknown asset" }, { status: 404 });
+  }
+  // CoinGecko-only assets can serve 1d and nothing else. That is a bad request,
+  // not an upstream failure — answer 400 rather than the catch-all 502 below.
+  if (!hasIntradaySource(asset) && interval !== "1d") {
+    return NextResponse.json(
+      {
+        error: `${asset.symbol} has no Binance or Hyperliquid listing — only 1d candles are available for it`,
+      },
+      { status: 400 },
+    );
   }
 
   const now = Date.now();

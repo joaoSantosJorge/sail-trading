@@ -7,7 +7,7 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useEffect, useRef, useState } from "react";
-import { priceChartSpecSchema, type PriceChartSpec } from "@/lib/ai/render-schemas";
+import { chartFetchBars, priceChartSpecSchema, type PriceChartSpec } from "@/lib/ai/render-schemas";
 import type { Candle } from "@/server/market/types";
 import { BlockError, BlockFrame, BlockPending } from "./block-frame";
 
@@ -45,6 +45,8 @@ function ema(values: number[], period: number): number[] {
 
 const OVERLAY_COLORS = ["#3b82f6", "#f59e0b", "#a855f7", "#14b8a6"];
 
+const INTRADAY_INTERVALS = new Set<PriceChartSpec["interval"]>(["5m", "15m", "1h", "4h"]);
+
 function ChartCanvas({ spec }: { spec: PriceChartSpec }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +63,12 @@ function ChartCanvas({ spec }: { spec: PriceChartSpec }) {
         vertLines: { color: "rgba(107,114,128,0.15)" },
         horzLines: { color: "rgba(107,114,128,0.15)" },
       },
-      timeScale: { timeVisible: true, secondsVisible: false, minBarSpacing: 0 },
+      timeScale: {
+        // Time-of-day only means something intraday; 1d/1w/1M read as dates.
+        timeVisible: INTRADAY_INTERVALS.has(spec.interval),
+        secondsVisible: false,
+        minBarSpacing: 0,
+      },
     });
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#22c55e",
@@ -71,8 +78,12 @@ function ChartCanvas({ spec }: { spec: PriceChartSpec }) {
       wickDownColor: "#ef4444",
     });
 
+    // Fetch overlay warm-up bars on top of the window, then keep the VISIBLE
+    // window at exactly lookbackBars (see chartFetchBars).
+    const fetchBars = chartFetchBars(spec);
+
     let cancelled = false;
-    fetch(`/api/v1/candles?assetId=${spec.assetId}&interval=${spec.interval}&bars=${spec.lookbackBars}`)
+    fetch(`/api/v1/candles?assetId=${spec.assetId}&interval=${spec.interval}&bars=${fetchBars}`)
       .then(async (res) => {
         if (!res.ok) throw new Error((await res.json()).error ?? `HTTP ${res.status}`);
         return res.json() as Promise<{ asset: { symbol: string }; candles: Candle[] }>;
@@ -104,7 +115,13 @@ function ChartCanvas({ spec }: { spec: PriceChartSpec }) {
               .filter((p) => Number.isFinite(p.value)),
           );
         });
-        chart.timeScale().fitContent();
+        if (fetchBars > spec.lookbackBars && candles.length > spec.lookbackBars) {
+          chart
+            .timeScale()
+            .setVisibleLogicalRange({ from: candles.length - spec.lookbackBars, to: candles.length });
+        } else {
+          chart.timeScale().fitContent();
+        }
       })
       .catch((err: Error) => {
         if (!cancelled) setError(err.message);

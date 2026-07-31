@@ -10,8 +10,14 @@ import {
   INDICATOR_TYPES,
   type IndicatorRequest,
 } from "@/lib/indicators/snapshots";
-import { getCandles, type AssetRow } from "@/server/market/candleCache";
-import { INTERVAL_MS, type Candle, type Interval } from "@/server/market/types";
+import { getCandles, hasIntradaySource, type AssetRow } from "@/server/market/candleCache";
+import {
+  CHART_INTERVAL_MS,
+  CHART_INTERVALS,
+  INTERVAL_MS,
+  type Candle,
+  type ChartInterval,
+} from "@/server/market/types";
 
 /**
  * Read-tool registry: zod input schema + description + run(userId, input).
@@ -65,7 +71,7 @@ async function snapshotForAsset(asset: AssetRow) {
   };
 }
 
-function candleStats(candlesArr: Candle[], interval: Interval) {
+function candleStats(candlesArr: Candle[], interval: ChartInterval) {
   const first = candlesArr[0];
   const last = candlesArr[candlesArr.length - 1];
   const high = Math.max(...candlesArr.map((c) => c.h));
@@ -77,11 +83,15 @@ function candleStats(candlesArr: Candle[], interval: Interval) {
   }
   const mean = rets.reduce((a, b) => a + b, 0) / Math.max(rets.length, 1);
   const variance = rets.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(rets.length - 1, 1);
-  const barsPerYear = (365 * 24 * 60 * 60 * 1000) / INTERVAL_MS[interval];
+  const barsPerYear = (365 * 24 * 60 * 60 * 1000) / CHART_INTERVAL_MS[interval];
   return {
     bars: candlesArr.length,
     from: new Date(first.t).toISOString(),
     to: new Date(last.t).toISOString(),
+    // `from`/`to` are candle OPEN times, not window bounds — spelled out
+    // because on 1w/1M bars that difference is a whole week or month.
+    lastCandleOpen: new Date(last.t).toISOString().slice(0, 10),
+    lastCandleCovers: `${interval} bar opening ${new Date(last.t).toISOString().slice(0, 10)} (last CLOSED bar)`,
     open: first.o,
     close: last.c,
     high,
@@ -145,10 +155,10 @@ export const READ_TOOLS: ReadToolEntry[] = [
   {
     name: "get_ohlcv_summary",
     description:
-      "Price-action summary for one asset over a lookback window: open/close/high/low, % change, annualized realized volatility, and the last 10 candles. Optionally computes indicator snapshots (sma/ema/rsi/macd/bbands/atr/roc — latest value plus the 2 prior bars) over the same window; defaults: sma/ema/bbands period 20, rsi/atr 14, roc 10, macd 12/26/9, stdDev 2. Ensure lookbackBars comfortably exceeds the longest period. Use for grounding any price discussion. Never returns full raw series.",
+      "Price-action summary for one asset over a lookback window: open/close/high/low, % change, annualized realized volatility, and the last 10 candles. Interval is any of 5m/15m/1h/4h/1d/1w/1M — use 1w for weekly analysis and 1M for monthly. `from`/`to` in the result are the OPEN times of the first and last candle (not window bounds); date any figure you quote by lastCandleOpen. Optionally computes indicator snapshots (sma/ema/rsi/macd/bbands/atr/roc — latest value plus the 2 prior bars) over the same window; defaults: sma/ema/bbands period 20, rsi/atr 14, roc 10, macd 12/26/9, stdDev 2. Ensure lookbackBars comfortably exceeds the longest period (e.g. a 200-period MA needs lookbackBars >= 260). Use for grounding any price discussion. Never returns full raw series.",
     schema: z.object({
       assetId: z.number().int(),
-      interval: z.enum(["15m", "1h", "4h", "1d"]),
+      interval: z.enum(CHART_INTERVALS),
       lookbackBars: z.number().int().min(30).max(500).default(180),
       indicators: z
         .array(
@@ -168,14 +178,21 @@ export const READ_TOOLS: ReadToolEntry[] = [
       _ctx,
       input: {
         assetId: number;
-        interval: Interval;
+        interval: ChartInterval;
         lookbackBars: number;
         indicators?: IndicatorRequest[];
       },
     ) => {
       const asset = await assetById(input.assetId);
       if (!asset) return { error: "asset not found" };
-      const ms = INTERVAL_MS[input.interval];
+      // CoinGecko-only assets have daily candles and nothing else — say so
+      // instead of letting the cache throw an opaque upstream error.
+      if (!hasIntradaySource(asset) && input.interval !== "1d") {
+        return {
+          error: `${asset.symbol} has no Binance or Hyperliquid listing — only 1d candles are available for it`,
+        };
+      }
+      const ms = CHART_INTERVAL_MS[input.interval];
       const now = Date.now();
       const { candles } = await getCandles(
         db,
@@ -467,7 +484,7 @@ READ_TOOLS.push(
   {
     name: "list_saved_charts",
     description:
-      "List the user's saved chart layouts from the Analyse Assets page: name, asset symbol, interval, indicators shown (MA/EMA/BOLL/VOL/RSI/MACD), drawing count, last updated. Use when the user refers to 'my chart' or their setup, or to see what they've been watching. Follow up with get_ohlcv_summary on the same asset (chart-only intervals like 1w aren't available there).",
+      "List the user's saved chart layouts from the Analyse Assets page: name, asset symbol, interval, indicators shown (MA/EMA/BOLL/VOL/RSI/MACD), drawing count, last updated. Use when the user refers to 'my chart' or their setup, or to see what they've been watching. Follow up with get_ohlcv_summary on the same asset and interval.",
     schema: z.object({}),
     run: async ({ userId }) => {
       const charts = await listSavedCharts(db, userId);
